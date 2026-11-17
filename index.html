@@ -23,6 +23,8 @@
   .big { font-size: 1.7rem; font-weight: 700; min-height: 2.4rem; text-align: center; }
   .word { font-size: 2.4rem; font-weight: 800; text-align: center; min-height: 3.2rem; word-break: break-word; }
   .word.interim { opacity: .45; }
+  .animal { font-size: 2.2rem; font-weight: 800; text-align: center; min-height: 3rem; color: #c2410c; }
+  .animal-word { text-align: center; min-height: 1.2rem; margin: 0 0 8px; }
   .small { font-size: .9rem; opacity: .8; margin: 8px 0 4px; }
   .status { font-size: 1.05rem; font-weight: 600; padding: 8px 10px; border-radius: 10px; background: #e5e7eb; margin: 10px 0; }
   .status.ok { background: #dcfce7; color: #14532d; }
@@ -60,6 +62,8 @@
 
 <!-- Ton-Test -->
 <div id="soundPanel" class="panel hidden">
+  <div class="animal" id="animal"></div>
+  <p class="small animal-word" id="animalWord"></p>
   <p class="small">Erkanntes Wort:</p>
   <div class="word" id="word">–</div>
   <p class="small" id="alts"></p>
@@ -75,7 +79,7 @@
 
   <p class="small">Zuletzt gehört:</p>
   <ol id="history" class="small"></ol>
-  <p class="small">Tipp: „Hund“ oder „Wau“ sagen.</p>
+  <p class="small">Tipp: „Hund“, „Wau“, „Katze“ oder „Miau“ sagen.</p>
 </div>
 
 <!-- Finger-Test -->
@@ -122,7 +126,55 @@ $('btnFinger').onclick = () => {
 /* ======================= Ton-Test ======================= */
 /* Zuerst nur Spracherkennung. Die Ton-Messung startet nur als Ersatz,
    wenn die Spracherkennung fehlt oder nicht funktioniert. */
-const DOG = /\b(hund|hunde|hundi|wau|wauwau|wuff)\b/i;
+
+/* ---- Tier-Wörter ----
+   strong: zählen überall, auch mitten im Satz
+   weak:   typische Kinder-Aussprache / Verhörer – zählen nur bei kurzen Äußerungen (max. 2 Wörter)
+   fuzzy:  ähnliche Wörter (1 Buchstabe Unterschied) – ebenfalls nur bei kurzen Äußerungen */
+const ANIMALS = [
+  {
+    name: 'Hund', emoji: '🐶',
+    strong: ['hund', 'hunde', 'hundi', 'hündchen', 'wau', 'wauwau', 'wuff'],
+    weak: ['und', 'rund', 'hunt', 'bau', 'wow'],
+    fuzzy: ['hund', 'hundi', 'wuff']
+  },
+  {
+    name: 'Katze', emoji: '🐱',
+    strong: ['katze', 'katzen', 'katzi', 'kätzchen', 'mieze', 'miezi', 'miau'],
+    weak: ['tatze', 'atze', 'kaze', 'katz', 'mau', 'miu', 'miao'],
+    fuzzy: ['katze', 'mieze', 'miau']
+  }
+];
+
+function levenshtein(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return d[a.length][b.length];
+}
+
+// Prüft alle Varianten, die der Browser gehört hat. Reihenfolge: strong → weak → fuzzy
+function matchAnimal(texts) {
+  const split = (t) => t.toLowerCase().replace(/[^a-zäöüß\s]/g, ' ').split(/\s+/).filter(Boolean);
+  for (const pass of ['strong', 'weak', 'fuzzy']) {
+    for (const t of texts) {
+      const words = split(t);
+      if (pass !== 'strong' && words.length > 2) continue;
+      for (const w of words) {
+        for (const a of ANIMALS) {
+          if (pass === 'strong' && a.strong.includes(w)) return { animal: a, word: w };
+          if (pass === 'weak' && a.weak.includes(w)) return { animal: a, word: w };
+          if (pass === 'fuzzy' && w.length >= 3 && a.fuzzy.some((f) => levenshtein(w, f) <= 1)) return { animal: a, word: w };
+        }
+      }
+    }
+  }
+  return null;
+}
 
 function startSound() {
   $('btnSound').classList.add('active');
@@ -134,9 +186,12 @@ function startSound() {
   $('alts').textContent = '';
   $('history').innerHTML = '';
   $('levelBox').classList.add('hidden');
+  $('animal').textContent = '';
+  $('animalWord').textContent = '';
 
-  let running = true, rec = null, fatal = false, hitTimer = 0;
+  let running = true, rec = null, fatal = false, hitTimer = 0, animalTimer = 0;
   let stream = null, raf = 0, volumeStarted = false;
+  let pendingSound = false, soundTimer = 0;
 
   // AudioContext jetzt beim Tippen anlegen, damit er später als Ersatz sicher läuft
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -151,24 +206,47 @@ function startSound() {
   function showHit(text) {
     $('soundHit').textContent = text;
     clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => { $('soundHit').textContent = ''; }, 1500);
+    hitTimer = setTimeout(() => { $('soundHit').textContent = ''; }, 2000);
   }
 
   function showWord(text, interim) {
-    $('word').textContent = '„' + text + '“' + (DOG.test(text) ? ' 🐶' : '');
+    $('word').textContent = '„' + text + '“';
     $('word').classList.toggle('interim', interim);
   }
 
-  function addHistory(text) {
+  function showAnimal(m) {
+    $('animal').textContent = `${m.animal.emoji} ${m.animal.name} erkannt`;
+    $('animalWord').textContent = `gehört: „${m.word}“`;
+    clearTimeout(animalTimer);
+    animalTimer = setTimeout(() => { $('animal').textContent = ''; $('animalWord').textContent = ''; }, 3000);
+  }
+
+  function addHistory(text, m) {
     const li = document.createElement('li');
-    li.textContent = text + (DOG.test(text) ? '  🐶' : '');
+    li.textContent = '„' + text + '“' + (m ? `  → ${m.animal.emoji} ${m.animal.name}` : '');
     $('history').prepend(li);
     while ($('history').children.length > 5) $('history').lastChild.remove();
+  }
+
+  // Etwas gehört, aber kein Wort verstanden → nach kurzer Wartezeit "Ton gehört" anzeigen
+  function soundStarted() {
+    pendingSound = true;
+    clearTimeout(soundTimer);
+    setSr('höre etwas … 👂', 'ok');
+  }
+  function soundEnded() {
+    if (!pendingSound) return;
+    clearTimeout(soundTimer);
+    soundTimer = setTimeout(() => {
+      if (pendingSound && running) { pendingSound = false; showHit('🔊 Ton gehört – kein Wort verstanden'); }
+    }, 1200);
   }
 
   stopCurrent = () => {
     running = false;
     clearTimeout(hitTimer);
+    clearTimeout(animalTimer);
+    clearTimeout(soundTimer);
     cancelAnimationFrame(raf);
     if (rec) { try { rec.abort(); } catch (e) {} }
     if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -223,21 +301,28 @@ function startSound() {
   rec.maxAlternatives = 3;
 
   rec.onstart = () => setSr('läuft ✅ – sprich jetzt', 'ok');
-  rec.onspeechstart = () => setSr('höre Sprache … 👂', 'ok');
+  rec.onsoundstart = soundStarted;
+  rec.onspeechstart = soundStarted;
+  rec.onsoundend = soundEnded;
+  rec.onspeechend = soundEnded;
+  rec.onnomatch = () => { pendingSound = true; soundEnded(); };
 
   rec.onresult = (ev) => {
+    pendingSound = false;
+    clearTimeout(soundTimer);
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const r = ev.results[i];
-      const best = (r[0] && r[0].transcript || '').trim();
-      if (!best) continue;
-      showWord(best, !r.isFinal);
-      const alts = [];
-      for (let j = 1; j < r.length; j++) {
-        const t = r[j].transcript.trim();
-        if (t && t !== best && !alts.includes(t)) alts.push(t);
+      const texts = [];
+      for (let j = 0; j < r.length; j++) {
+        const t = (r[j] && r[j].transcript || '').trim();
+        if (t && !texts.includes(t)) texts.push(t);
       }
-      $('alts').textContent = alts.length ? 'Andere Möglichkeiten: ' + alts.join(', ') : '';
-      if (r.isFinal) addHistory(best);
+      if (!texts.length) continue;
+      const m = matchAnimal(texts);
+      showWord(texts[0], !r.isFinal);
+      $('alts').textContent = texts.length > 1 ? 'Andere Möglichkeiten: ' + texts.slice(1).join(', ') : '';
+      if (m) showAnimal(m);
+      if (r.isFinal) addHistory(texts[0], m);
     }
   };
 
@@ -262,6 +347,7 @@ function startSound() {
   };
 
   rec.onend = () => {
+    soundEnded();
     if (!running || fatal) return;
     // Browser beenden die Erkennung nach Pausen – automatisch neu starten
     setTimeout(() => {
