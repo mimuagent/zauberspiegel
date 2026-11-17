@@ -102,7 +102,8 @@
   /* ---------- Testinfo unten ---------- */
   #debug {
     position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom));
-    font-size: 12px; color: #173a12; opacity: .8; text-align: center; pointer-events: none;
+    font-size: 12px; line-height: 1.45; color: #173a12; opacity: .8; text-align: left;
+    white-space: pre-line; pointer-events: none;
   }
 
   /* ---------- Startbildschirm ---------- */
@@ -251,8 +252,10 @@ function matchAnimal(texts, candidates = ANIMALS) {
 /* ======================= Testinfo ======================= */
 let dbgSr = '–', dbgVol = '', dbgCam = '–', dbgHeard = '–', dbgLast = '–';
 function renderDebug() {
-  $('debug').textContent = `🎤 ${dbgSr}` + (dbgVol ? ` · Ersatz: ${dbgVol}` : '') +
-    ` · 📷 ${dbgCam} · gehört: ${dbgHeard} · Auslöser: ${dbgLast}`;
+  $('debug').textContent =
+    `🎤 Sprache: ${dbgSr}` + (dbgVol ? `\n🔊 Ersatz: ${dbgVol}` : '') +
+    `\n📷 Kamera: ${dbgCam}` +
+    `\n💬 gehört: ${dbgHeard} · Auslöser: ${dbgLast}`;
 }
 function setCam(t) { if (dbgCam !== t) { dbgCam = t; renderDebug(); } }
 function setSr(t) { dbgSr = t; renderDebug(); }
@@ -312,7 +315,7 @@ async function react(how) {
   if (state.phase !== 'waiting') return;
   state.phase = 'reacting';
   dbgLast = how; renderDebug();
-  listener.pause(); // sonst hört die Spracherkennung das eigene Geräusch
+  // Zuhören läuft weiter (jeder Neustart riskiert Fehler); Gehörtes wird außerhalb von 'waiting' ignoriert
   setMode('happy');
   showBubble(state.current.say);
   await Promise.all([playSound(state.current), wait(1600)]);
@@ -412,14 +415,19 @@ async function decodeSounds() {
   }
 }
 
+// Tonausgabe nur während des Geräuschs offen halten, damit sie das Mikrofon nicht blockiert
+function releaseAudio() {
+  if (audioCtx && !volumeStarted && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
+}
+
 function playSound(animal) {
   const buf = soundBuf[animal.name];
   if (!buf || !audioCtx) return speakSound(animal);
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     let finished = false;
-    const done = () => { if (!finished) { finished = true; resolve(); } };
+    const done = () => { if (!finished) { finished = true; releaseAudio(); resolve(); } };
     try {
-      audioCtx.resume();
+      await audioCtx.resume();
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
       src.connect(audioCtx.destination);
@@ -467,9 +475,10 @@ function handleHeard(texts, isFinal) {
 }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-// Endgültig nur bei echten Sperren – alles andere wird erneut versucht
+// Endgültig nur bei echten Sperren – alles andere (z. B. "network") wird immer wieder versucht
 const HARD_FATAL = ['not-allowed', 'service-not-allowed', 'language-not-supported'];
-const MAX_SOFT_ERRORS = 5;
+const RESTART_DELAY = 700;   // Pause vor jedem Neustart, damit Android die alte Erkennung freigeben kann
+const MAX_RETRY_DELAY = 10000;
 
 const listener = {
   rec: null,          // aktuelle Spracherkennung (bei jedem Start neu angelegt)
@@ -490,7 +499,7 @@ const listener = {
     setInterval(() => this.watchdog(), 1000);
   },
 
-  show(text) { setSr(`${text} · Start #${this.starts} · letzter Fehler: ${this.lastErr}`); },
+  show(text) { setSr(`${text} · Start #${this.starts} · Fehler: ${this.lastErr}`); },
 
   create() {
     const rec = new SR();
@@ -506,7 +515,10 @@ const listener = {
       this.rec = null;
       this.state = 'off';
       this.soundEnded();
-      if (this.wanted) setTimeout(() => this.startNow(), 250);
+      if (this.wanted) {
+        this.retryAt = Math.max(this.retryAt, Date.now() + RESTART_DELAY);
+        setTimeout(() => this.startNow(), this.retryAt - Date.now() + 10);
+      }
     };
     rec.onsoundstart = () => { if (!mine()) return; this.softErrors = 0; this.soundStarted(); };
     rec.onspeechstart = () => { if (!mine()) return; this.softErrors = 0; this.soundStarted(); };
@@ -523,15 +535,11 @@ const listener = {
         startVolume();
         return;
       }
+      // nie aufgeben: wachsende Pausen 1 s, 2 s, 4 s, 8 s, dann alle 10 s
       this.softErrors++;
-      this.retryAt = Date.now() + 1000; // kurz warten, dann neu versuchen
-      if (this.softErrors >= MAX_SOFT_ERRORS) {
-        this.fatal = true;
-        this.show(`${MAX_SOFT_ERRORS} Fehler hintereinander`);
-        startVolume();
-      } else {
-        this.show(`Fehler, neuer Versuch (${this.softErrors}/${MAX_SOFT_ERRORS})`);
-      }
+      const wait = Math.min(MAX_RETRY_DELAY, 1000 * 2 ** (this.softErrors - 1));
+      this.retryAt = Date.now() + wait;
+      this.show(`Fehler, neuer Versuch in ${Math.round(wait / 1000)} s`);
     };
     rec.onresult = (ev) => {
       if (!mine()) return;
@@ -575,8 +583,7 @@ const listener = {
       this.startNow();
     } else if (this.state === 'starting' && Date.now() - this.startedAt > 4000) {
       this.lastErr = 'Start hängt';
-      this.drop();
-      this.startNow();
+      this.drop(); // nächster Versuch nach RESTART_DELAY über die Kontrolle
     }
   },
 
@@ -585,6 +592,7 @@ const listener = {
     const r = this.rec;
     this.rec = null;
     this.state = 'off';
+    this.retryAt = Math.max(this.retryAt, Date.now() + RESTART_DELAY);
     if (r) { try { r.abort(); } catch (e) {} }
   },
 
@@ -772,7 +780,7 @@ window.zsDebug = { waveBack, wave, sounds: () => Object.keys(soundBuf) };
 $('startBtn').addEventListener('click', () => {
   // Ton und Sprachausgabe müssen durch eine Berührung freigeschaltet werden
   const AC = window.AudioContext || window.webkitAudioContext;
-  if (AC) { audioCtx = new AC(); audioCtx.resume(); decodeSounds(); }
+  if (AC) { audioCtx = new AC(); audioCtx.resume(); decodeSounds().then(releaseAudio); }
   if ('speechSynthesis' in window) {
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
   }
