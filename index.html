@@ -2,144 +2,130 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zauberspiegel – Technik-Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zauberspiegel-Tiere</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
-    margin: 0 auto; padding: 16px; max-width: 640px;
     font-family: system-ui, -apple-system, sans-serif;
-    background: #f6f3ee; color: #222;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
   }
-  h1 { font-size: 1.3rem; margin: 0 0 6px; }
-  .buttons { display: flex; gap: 12px; margin-top: 10px; }
-  button {
-    flex: 1; font-size: 1.15rem; font-weight: 600; padding: 18px 10px;
-    border: 0; border-radius: 14px; background: #3d6fd6; color: #fff;
+
+  /* ---------- Bühne ---------- */
+  #stage {
+    position: fixed; inset: 0; overflow: hidden;
+    background: linear-gradient(#8fd3ff 0%, #d4f0ff 62%, #86cf72 62%, #5fae52 100%);
   }
-  button.active { background: #c2410c; }
-  .panel { background: #fff; border-radius: 14px; padding: 14px; margin-top: 14px; }
-  .hidden { display: none; }
-  .big { font-size: 1.7rem; font-weight: 700; min-height: 2.4rem; text-align: center; }
-  .word { font-size: 2.4rem; font-weight: 800; text-align: center; min-height: 3.2rem; word-break: break-word; }
-  .word.interim { opacity: .45; }
-  .animal { font-size: 2.2rem; font-weight: 800; text-align: center; min-height: 3rem; color: #c2410c; }
-  .animal-word { text-align: center; min-height: 1.2rem; margin: 0 0 8px; }
-  .small { font-size: .9rem; opacity: .8; margin: 8px 0 4px; }
-  .status { font-size: 1.05rem; font-weight: 600; padding: 8px 10px; border-radius: 10px; background: #e5e7eb; margin: 10px 0; }
-  .status.ok { background: #dcfce7; color: #14532d; }
-  .status.err { background: #fee2e2; color: #7f1d1d; }
-  #history { margin: 4px 0 0; padding-left: 22px; }
-  .meter { position: relative; height: 22px; background: #ddd; border-radius: 11px; overflow: hidden; }
-  .meter::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: #c2410c; }
-  .meter > div { height: 100%; width: 0; background: #16a34a; }
-  input[type=range] { width: 100%; }
-  .stage {
-    position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000;
-    border-radius: 14px; overflow: hidden; transform: scaleX(-1); /* Spiegelbild */
+  .sun {
+    position: absolute; top: 7%; right: 9%; width: 18vmin; height: 18vmin; border-radius: 50%;
+    background: #ffd84d; box-shadow: 0 0 50px #ffe680;
   }
-  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  #warn { background: #fde68a; padding: 10px; border-radius: 10px; margin-bottom: 12px; }
-  @media (prefers-color-scheme: dark) {
-    body { background: #1b1b1b; color: #eee; }
-    .panel { background: #262626; }
-    .meter { background: #444; }
-    .status { background: #374151; }
-    .status.ok { background: #14532d; color: #dcfce7; }
-    .status.err { background: #7f1d1d; color: #fee2e2; }
+  .cloud {
+    position: absolute; height: 8vmin; width: 26vmin; border-radius: 8vmin; background: #fff; opacity: .9;
   }
+  .cloud::before, .cloud::after {
+    content: ""; position: absolute; background: #fff; border-radius: 50%;
+  }
+  .cloud::before { width: 11vmin; height: 11vmin; left: 4vmin; top: -5vmin; }
+  .cloud::after { width: 9vmin; height: 9vmin; left: 13vmin; top: -3.5vmin; }
+  .c1 { top: 12%; left: 8%; } .c2 { top: 26%; left: 55%; transform: scale(.7); }
+
+  /* ---------- Tier ---------- */
+  #animal {
+    position: absolute; left: -35%; bottom: 24%;
+    transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #body {
+    font-size: min(42vw, 34vh); line-height: 1; cursor: pointer;
+    transform-origin: 50% 100%;
+    filter: drop-shadow(0 10px 6px rgba(0,0,0,.25));
+  }
+  .bubble {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    margin-bottom: 14px; padding: .25em .7em; border-radius: 1em;
+    background: #fff; color: #222; font-size: min(9vw, 6vh); font-weight: 800; white-space: nowrap;
+    box-shadow: 0 4px 10px rgba(0,0,0,.15);
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .bubble.show { opacity: 1; }
+  .bubble::after {
+    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 12px solid transparent; border-top-color: #fff;
+  }
+
+  /* Bewegungen */
+  #animal.walking #body { animation: hop .45s ease-in-out infinite; }
+  #animal.waiting #body { animation: breathe 2.4s ease-in-out infinite; }
+  #animal.happy   #body { animation: jump .5s ease-out 3; }
+  #animal.hint    #body { animation: jump .5s ease-out 2; }
+  #animal.listen  #body { animation: tilt 1.2s ease-in-out 1; }
+  #animal.no      #body { animation: shake .7s ease-in-out 1; }
+
+  @keyframes hop     { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-10%) rotate(4deg); } }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04, .97); } }
+  @keyframes jump    { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-25%) scale(1.08); } 70% { transform: translateY(0) scale(1.05, .92); } }
+  @keyframes tilt    { 0%,100% { transform: rotate(0); } 30%,70% { transform: rotate(12deg); } }
+  @keyframes shake   { 0%,100% { transform: rotate(0); } 20% { transform: rotate(-10deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(-8deg); } 80% { transform: rotate(6deg); } }
+
+  /* ---------- Testinfo unten ---------- */
+  #debug {
+    position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom));
+    font-size: 12px; color: #173a12; opacity: .8; text-align: center; pointer-events: none;
+  }
+
+  /* ---------- Startbildschirm ---------- */
+  #start {
+    position: fixed; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+    background: rgba(255,255,255,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  #start h1 { margin: 0; font-size: 8vmin; color: #1f3b73; text-align: center; }
+  #startBtn {
+    font-size: 7vmin; font-weight: 800; padding: .6em 1.4em; border: 0; border-radius: 1em;
+    background: #ff8a3d; color: #fff; box-shadow: 0 6px 0 #c85f17;
+  }
+  #startBtn:active { transform: translateY(4px); box-shadow: 0 2px 0 #c85f17; }
+  #start a { color: #1f3b73; font-size: 15px; }
 </style>
 </head>
 <body>
-<h1>🪄 Zauberspiegel – Technik-Test</h1>
-<div id="warn" class="hidden"></div>
-<p class="small" id="mpStatus">Handerkennung: lädt …</p>
 
-<div class="buttons">
-  <button id="btnSound">🎤 Ton-Test</button>
-  <button id="btnFinger">☝️ Finger-Test</button>
+<div id="stage">
+  <div class="sun"></div>
+  <div class="cloud c1"></div>
+  <div class="cloud c2"></div>
+  <div id="animal">
+    <div id="bubble" class="bubble"></div>
+    <div id="body">🐶</div>
+  </div>
+  <div id="debug"></div>
 </div>
 
-<!-- Ton-Test -->
-<div id="soundPanel" class="panel hidden">
-  <div class="animal" id="animal"></div>
-  <p class="small animal-word" id="animalWord"></p>
-  <p class="small">Erkanntes Wort:</p>
-  <div class="word" id="word">–</div>
-  <p class="small" id="alts"></p>
-  <div class="status" id="srStatus">Spracherkennung: –</div>
-  <div class="big" id="soundHit"></div>
-
-  <div id="levelBox" class="hidden">
-    <p class="small" id="levelStatus">Ton-Messung (Ersatz): –</p>
-    <div class="meter"><div id="level"></div></div>
-    <p class="small">Empfindlichkeit</p>
-    <input type="range" id="gain" min="2" max="30" value="8">
-  </div>
-
-  <p class="small">Zuletzt gehört:</p>
-  <ol id="history" class="small"></ol>
-  <p class="small">Tipp: „Hund“, „Wau“, „Katze“ oder „Miau“ sagen.</p>
-</div>
-
-<!-- Finger-Test -->
-<div id="fingerPanel" class="panel hidden">
-  <div class="big" id="fingerHit"></div>
-  <div class="stage" id="stage">
-    <video id="video" playsinline muted autoplay></video>
-    <canvas id="canvas"></canvas>
-  </div>
-  <p class="small" id="fingerStatus">–</p>
+<div id="start">
+  <h1>🪄 Zauberspiegel-Tiere</h1>
+  <button id="startBtn">▶ Los geht's</button>
+  <a href="test.html">Technik-Test</a>
 </div>
 
 <script type="module">
 const $ = (id) => document.getElementById(id);
-let stopCurrent = null;
+const animalEl = $('animal'), bodyEl = $('body'), bubbleEl = $('bubble');
 
-if (!window.isSecureContext) {
-  $('warn').textContent = '⚠️ Diese Seite läuft nicht über https. Kamera und Mikrofon funktionieren dann nicht.';
-  $('warn').classList.remove('hidden');
-}
-
-function stopAll() {
-  if (stopCurrent) { stopCurrent(); stopCurrent = null; }
-  $('btnSound').classList.remove('active');
-  $('btnFinger').classList.remove('active');
-  $('btnSound').textContent = '🎤 Ton-Test';
-  $('btnFinger').textContent = '☝️ Finger-Test';
-  $('soundPanel').classList.add('hidden');
-  $('fingerPanel').classList.add('hidden');
-}
-
-$('btnSound').onclick = () => {
-  const wasActive = $('btnSound').classList.contains('active');
-  stopAll();
-  if (!wasActive) startSound();
-};
-
-$('btnFinger').onclick = () => {
-  const wasActive = $('btnFinger').classList.contains('active');
-  stopAll();
-  if (!wasActive) startFinger();
-};
-
-/* ======================= Ton-Test ======================= */
-/* Zuerst nur Spracherkennung. Die Ton-Messung startet nur als Ersatz,
-   wenn die Spracherkennung fehlt oder nicht funktioniert. */
-
-/* ---- Tier-Wörter ----
-   strong: zählen überall, auch mitten im Satz
-   weak:   typische Kinder-Aussprache / Verhörer – zählen nur bei kurzen Äußerungen (max. 2 Wörter)
-   fuzzy:  ähnliche Wörter (1 Buchstabe Unterschied) – ebenfalls nur bei kurzen Äußerungen */
+/* ======================= Tiere ======================= */
+/* strong: zählen überall, auch mitten im Satz
+   weak:   Kinder-Aussprache / Verhörer – nur bei kurzen Äußerungen (max. 2 Wörter)
+   fuzzy:  1 Buchstabe Unterschied – ebenfalls nur bei kurzen Äußerungen */
 const ANIMALS = [
   {
-    name: 'Hund', emoji: '🐶',
+    name: 'Hund', emoji: '🐶', say: 'Wau wau!', pitch: 0.7, rate: 1.0,
     strong: ['hund', 'hunde', 'hundi', 'hündchen', 'wau', 'wauwau', 'wuff'],
     weak: ['und', 'rund', 'hunt', 'bau', 'wow'],
     fuzzy: ['hund', 'hundi', 'wuff']
   },
   {
-    name: 'Katze', emoji: '🐱',
+    name: 'Katze', emoji: '🐱', say: 'Miau!', pitch: 1.5, rate: 0.8,
     strong: ['katze', 'katzen', 'katzi', 'kätzchen', 'mieze', 'miezi', 'miau'],
     weak: ['tatze', 'atze', 'kaze', 'katz', 'mau', 'miu', 'miao'],
     fuzzy: ['katze', 'mieze', 'miau']
@@ -157,15 +143,14 @@ function levenshtein(a, b) {
   return d[a.length][b.length];
 }
 
-// Prüft alle Varianten, die der Browser gehört hat. Reihenfolge: strong → weak → fuzzy
-function matchAnimal(texts) {
+function matchAnimal(texts, candidates = ANIMALS) {
   const split = (t) => t.toLowerCase().replace(/[^a-zäöüß\s]/g, ' ').split(/\s+/).filter(Boolean);
   for (const pass of ['strong', 'weak', 'fuzzy']) {
     for (const t of texts) {
       const words = split(t);
       if (pass !== 'strong' && words.length > 2) continue;
       for (const w of words) {
-        for (const a of ANIMALS) {
+        for (const a of candidates) {
           if (pass === 'strong' && a.strong.includes(w)) return { animal: a, word: w };
           if (pass === 'weak' && a.weak.includes(w)) return { animal: a, word: w };
           if (pass === 'fuzzy' && w.length >= 3 && a.fuzzy.some((f) => levenshtein(w, f) <= 1)) return { animal: a, word: w };
@@ -176,323 +161,292 @@ function matchAnimal(texts) {
   return null;
 }
 
-function startSound() {
-  $('btnSound').classList.add('active');
-  $('btnSound').textContent = '⏹ Stopp';
-  $('soundPanel').classList.remove('hidden');
-  $('soundHit').textContent = '';
-  $('word').textContent = '–';
-  $('word').classList.remove('interim');
-  $('alts').textContent = '';
-  $('history').innerHTML = '';
-  $('levelBox').classList.add('hidden');
-  $('animal').textContent = '';
-  $('animalWord').textContent = '';
+/* ======================= Testinfo ======================= */
+let dbgSr = '–', dbgHeard = '–', dbgLast = '–';
+function renderDebug() { $('debug').textContent = `🎤 ${dbgSr} · gehört: ${dbgHeard} · Auslöser: ${dbgLast}`; }
+function setSr(t) { dbgSr = t; renderDebug(); }
 
-  let running = true, rec = null, fatal = false, hitTimer = 0, animalTimer = 0;
-  let stream = null, raf = 0, volumeStarted = false;
-  let pendingSound = false, soundTimer = 0;
+/* ======================= Ablauf ======================= */
+// Phasen: start → entering → waiting → reacting → leaving → entering …
+const state = { phase: 'start', current: null, index: 0, lastActivity: 0 };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // AudioContext jetzt beim Tippen anlegen, damit er später als Ersatz sicher läuft
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
+function setMode(mode) {
+  animalEl.className = '';
+  void animalEl.offsetWidth; // Animation neu starten
+  animalEl.className = mode;
+}
 
-  const setSr = (text, kind) => {
-    const el = $('srStatus');
-    el.textContent = 'Spracherkennung: ' + text;
-    el.className = 'status ' + (kind || '');
+function oneShot(mode, ms) {
+  setMode(mode);
+  setTimeout(() => {
+    if (state.phase === 'waiting' && animalEl.className === mode) setMode('waiting');
+  }, ms);
+}
+
+let bubbleTimer = 0;
+function showBubble(text, ms) {
+  bubbleEl.textContent = text;
+  bubbleEl.classList.add('show');
+  clearTimeout(bubbleTimer);
+  if (ms) bubbleTimer = setTimeout(hideBubble, ms);
+}
+function hideBubble() { bubbleEl.classList.remove('show'); }
+
+async function walk(from, to, ms) {
+  setMode('walking');
+  const anim = animalEl.animate([{ left: from + '%' }, { left: to + '%' }],
+    { duration: ms, easing: 'ease-in-out', fill: 'forwards' });
+  try { await anim.finished; } catch (e) {}
+  animalEl.style.left = to + '%';
+  anim.cancel();
+}
+
+async function nextAnimal() {
+  state.current = ANIMALS[state.index % ANIMALS.length];
+  state.index++;
+  bodyEl.textContent = state.current.emoji;
+  state.phase = 'entering';
+  hideBubble();
+  listener.resume();
+  await walk(-35, 50, 2600);
+  state.phase = 'waiting';
+  state.lastActivity = Date.now();
+  setMode('waiting');
+}
+
+// Volle Reaktion: Freudensprung + Geräusch, dann hinauslaufen
+async function react(how) {
+  if (state.phase !== 'waiting') return;
+  state.phase = 'reacting';
+  dbgLast = how; renderDebug();
+  listener.pause(); // sonst hört die Spracherkennung das eigene Geräusch
+  setMode('happy');
+  showBubble(state.current.say);
+  await Promise.all([playSound(state.current), wait(1600)]);
+  hideBubble();
+  await wait(300);
+  state.phase = 'leaving';
+  await walk(50, 135, 2600);
+  nextAnimal();
+}
+
+// Ton gehört oder unbekanntes Wort: Tier horcht auf
+function perkUp(how) {
+  if (state.phase !== 'waiting') return;
+  state.lastActivity = Date.now();
+  dbgLast = how; renderDebug();
+  oneShot('listen', 1200);
+  showBubble('👂', 1200);
+}
+
+// Name des anderen Tiers: Tier schüttelt den Kopf
+function wrongAnimal(how) {
+  if (state.phase !== 'waiting') return;
+  state.lastActivity = Date.now();
+  dbgLast = how; renderDebug();
+  oneShot('no', 800);
+}
+
+// Aufforderung, wenn 8 Sekunden nichts passiert
+setInterval(() => {
+  if (state.phase === 'waiting' && Date.now() - state.lastActivity > 8000) {
+    state.lastActivity = Date.now();
+    oneShot('hint', 1000);
+    showBubble('👋', 1500);
+  }
+}, 1000);
+
+// Antippen
+bodyEl.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  react('angetippt');
+});
+
+/* ======================= Geräusch ======================= */
+let audioCtx = null;
+let germanVoice = null;
+
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  germanVoice = voices.find((v) => /^de/i.test(v.lang)) || null;
+}
+if ('speechSynthesis' in window) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+
+// Ersatz-Geräusch, falls keine Sprachausgabe vorhanden
+function beep(animal) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const tone = (f1, f2, start, dur, type) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f1, t + start);
+    o.frequency.linearRampToValueAtTime(f2, t + start + dur);
+    g.gain.setValueAtTime(0.0001, t + start);
+    g.gain.exponentialRampToValueAtTime(0.4, t + start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + start + dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + start);
+    o.stop(t + start + dur + 0.05);
   };
+  if (animal.name === 'Hund') { tone(300, 180, 0, 0.15, 'sawtooth'); tone(300, 180, 0.25, 0.15, 'sawtooth'); }
+  else { tone(600, 1000, 0, 0.25, 'sine'); tone(1000, 550, 0.25, 0.4, 'sine'); }
+}
 
-  function showHit(text) {
-    $('soundHit').textContent = text;
-    clearTimeout(hitTimer);
-    hitTimer = setTimeout(() => { $('soundHit').textContent = ''; }, 2000);
-  }
+// Vorläufig: Sprachausgabe sagt "Wau wau!" bzw. "Miau!" (echte Tiergeräusche kommen später)
+function playSound(animal) {
+  return new Promise((resolve) => {
+    let finished = false;
+    const done = () => { if (!finished) { finished = true; resolve(); } };
+    const fallback = () => { beep(animal); setTimeout(done, 900); };
+    if (!('speechSynthesis' in window)) { fallback(); return; }
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(animal.say);
+      u.lang = 'de-DE';
+      if (germanVoice) u.voice = germanVoice;
+      u.pitch = animal.pitch;
+      u.rate = animal.rate;
+      u.volume = 1;
+      u.onend = done;
+      u.onerror = fallback;
+      speechSynthesis.speak(u);
+      setTimeout(done, 3500); // Sicherheitsnetz
+    } catch (e) { fallback(); }
+  });
+}
 
-  function showWord(text, interim) {
-    $('word').textContent = '„' + text + '“';
-    $('word').classList.toggle('interim', interim);
-  }
+/* ======================= Zuhören ======================= */
+function handleHeard(texts, isFinal) {
+  const any = matchAnimal(texts);
+  dbgHeard = `„${texts[0]}“` + (any ? ` → ${any.animal.emoji}` : '');
+  renderDebug();
+  if (state.phase !== 'waiting') return;
+  const mine = matchAnimal(texts, [state.current]);
+  if (mine) { react(`Wort „${mine.word}“`); return; }
+  if (!isFinal) return; // Zwischenergebnisse lösen nur bei einem Treffer etwas aus
+  if (any) wrongAnimal(`anderes Tier „${any.word}“`);
+  else perkUp(`unbekanntes Wort „${texts[0]}“`);
+}
 
-  function showAnimal(m) {
-    $('animal').textContent = `${m.animal.emoji} ${m.animal.name} erkannt`;
-    $('animalWord').textContent = `gehört: „${m.word}“`;
-    clearTimeout(animalTimer);
-    animalTimer = setTimeout(() => { $('animal').textContent = ''; $('animalWord').textContent = ''; }, 3000);
-  }
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'];
 
-  function addHistory(text, m) {
-    const li = document.createElement('li');
-    li.textContent = '„' + text + '“' + (m ? `  → ${m.animal.emoji} ${m.animal.name}` : '');
-    $('history').prepend(li);
-    while ($('history').children.length > 5) $('history').lastChild.remove();
-  }
+const listener = {
+  rec: null, wanted: false, running: false, fatal: false,
+  pendingSound: false, soundTimer: 0,
 
-  // Etwas gehört, aber kein Wort verstanden → nach kurzer Wartezeit "Ton gehört" anzeigen
-  function soundStarted() {
-    pendingSound = true;
-    clearTimeout(soundTimer);
-    setSr('höre etwas … 👂', 'ok');
-  }
-  function soundEnded() {
-    if (!pendingSound) return;
-    clearTimeout(soundTimer);
-    soundTimer = setTimeout(() => {
-      if (pendingSound && running) { pendingSound = false; showHit('🔊 Ton gehört – kein Wort verstanden'); }
+  init() {
+    if (!SR) { setSr('Spracherkennung fehlt → Lautstärke'); startVolume(); return; }
+    const rec = this.rec = new SR();
+    rec.lang = 'de-DE';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
+
+    rec.onstart = () => { this.running = true; setSr('hört zu ✅'); };
+    rec.onend = () => {
+      this.running = false;
+      this.soundEnded();
+      if (this.wanted && !this.fatal) setTimeout(() => this.startSafe(), 250);
+      else if (!this.fatal) setSr('pausiert');
+    };
+    rec.onsoundstart = () => this.soundStarted();
+    rec.onspeechstart = () => this.soundStarted();
+    rec.onsoundend = () => this.soundEnded();
+    rec.onspeechend = () => this.soundEnded();
+    rec.onnomatch = () => { this.pendingSound = true; this.soundEnded(); };
+    rec.onerror = (ev) => {
+      if (FATAL.includes(ev.error)) {
+        this.fatal = true;
+        setSr('Fehler: ' + ev.error + ' → Lautstärke');
+        startVolume();
+      }
+    };
+    rec.onresult = (ev) => {
+      this.pendingSound = false;
+      clearTimeout(this.soundTimer);
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i];
+        const texts = [];
+        for (let j = 0; j < r.length; j++) {
+          const t = (r[j] && r[j].transcript || '').trim();
+          if (t && !texts.includes(t)) texts.push(t);
+        }
+        if (texts.length) handleHeard(texts, r.isFinal);
+      }
+    };
+  },
+
+  startSafe() {
+    if (!this.rec || this.fatal || !this.wanted || this.running) return;
+    try { this.rec.start(); } catch (e) { /* läuft schon */ }
+  },
+  resume() { this.wanted = true; this.startSafe(); },
+  pause() {
+    this.wanted = false;
+    this.pendingSound = false;
+    clearTimeout(this.soundTimer);
+    if (this.rec) { try { this.rec.abort(); } catch (e) {} }
+  },
+
+  // Etwas gehört, aber kein Wort verstanden → Tier horcht auf
+  soundStarted() { this.pendingSound = true; clearTimeout(this.soundTimer); },
+  soundEnded() {
+    if (!this.pendingSound) return;
+    clearTimeout(this.soundTimer);
+    this.soundTimer = setTimeout(() => {
+      if (this.pendingSound) { this.pendingSound = false; perkUp('Ton ohne Wort'); }
     }, 1200);
   }
-
-  stopCurrent = () => {
-    running = false;
-    clearTimeout(hitTimer);
-    clearTimeout(animalTimer);
-    clearTimeout(soundTimer);
-    cancelAnimationFrame(raf);
-    if (rec) { try { rec.abort(); } catch (e) {} }
-    if (stream) stream.getTracks().forEach((t) => t.stop());
-    ctx.close();
-  };
-
-  // ---- Ersatz: Ton-Messung ----
-  function startVolume() {
-    if (volumeStarted || !running) return;
-    volumeStarted = true;
-    $('levelBox').classList.remove('hidden');
-    ctx.resume();
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => {
-      stream = s;
-      if (!running) { s.getTracks().forEach((t) => t.stop()); return; }
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 1024;
-      ctx.createMediaStreamSource(s).connect(analyser);
-      const data = new Float32Array(analyser.fftSize);
-      let lastHit = 0;
-      $('levelStatus').textContent = 'Ton-Messung (Ersatz): läuft ✅ – über dem roten Strich = Ton erkannt';
-      const tick = () => {
-        if (!running) return;
-        analyser.getFloatTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-        const level = Math.min(1, Math.sqrt(sum / data.length) * Number($('gain').value));
-        $('level').style.width = (level * 100) + '%';
-        const now = performance.now();
-        if (level > 0.5 && now - lastHit > 1000) { lastHit = now; showHit('🔊 Ton erkannt!'); }
-        raf = requestAnimationFrame(tick);
-      };
-      tick();
-    }).catch((e) => {
-      $('levelStatus').textContent = 'Ton-Messung (Ersatz): Fehler – ' +
-        (e.name === 'NotAllowedError' ? 'Mikrofon nicht erlaubt' : (e.message || e.name));
-    });
-  }
-
-  // ---- Spracherkennung ----
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    setSr('in diesem Browser nicht vorhanden → Ersatz: Ton-Messung', 'err');
-    startVolume();
-    return;
-  }
-
-  rec = new SR();
-  rec.lang = 'de-DE';
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.maxAlternatives = 3;
-
-  rec.onstart = () => setSr('läuft ✅ – sprich jetzt', 'ok');
-  rec.onsoundstart = soundStarted;
-  rec.onspeechstart = soundStarted;
-  rec.onsoundend = soundEnded;
-  rec.onspeechend = soundEnded;
-  rec.onnomatch = () => { pendingSound = true; soundEnded(); };
-
-  rec.onresult = (ev) => {
-    pendingSound = false;
-    clearTimeout(soundTimer);
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const r = ev.results[i];
-      const texts = [];
-      for (let j = 0; j < r.length; j++) {
-        const t = (r[j] && r[j].transcript || '').trim();
-        if (t && !texts.includes(t)) texts.push(t);
-      }
-      if (!texts.length) continue;
-      const m = matchAnimal(texts);
-      showWord(texts[0], !r.isFinal);
-      $('alts').textContent = texts.length > 1 ? 'Andere Möglichkeiten: ' + texts.slice(1).join(', ') : '';
-      if (m) showAnimal(m);
-      if (r.isFinal) addHistory(texts[0], m);
-    }
-  };
-
-  rec.onerror = (ev) => {
-    const msgs = {
-      'not-allowed': 'Mikrofon nicht erlaubt',
-      'service-not-allowed': 'Spracherkennung vom Browser gesperrt',
-      'audio-capture': 'Mikrofon belegt oder nicht gefunden',
-      'network': 'keine Verbindung zum Spracherkennungs-Server',
-      'language-not-supported': 'Deutsch wird nicht unterstützt',
-      'no-speech': 'nichts gehört – läuft weiter',
-      'aborted': 'abgebrochen'
-    };
-    const msg = msgs[ev.error] || ev.error;
-    if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'].includes(ev.error)) {
-      fatal = true;
-      setSr('Fehler: ' + msg + ' → Ersatz: Ton-Messung', 'err');
-      startVolume();
-    } else if (ev.error !== 'aborted') {
-      setSr(msg, '');
-    }
-  };
-
-  rec.onend = () => {
-    soundEnded();
-    if (!running || fatal) return;
-    // Browser beenden die Erkennung nach Pausen – automatisch neu starten
-    setTimeout(() => {
-      if (!running) return;
-      try { rec.start(); }
-      catch (e) { setSr('gestoppt – Knopf zweimal drücken zum Neustart', 'err'); }
-    }, 250);
-  };
-
-  try {
-    rec.start();
-    setSr('startet …', '');
-  } catch (e) {
-    setSr('Start fehlgeschlagen: ' + e.message + ' → Ersatz: Ton-Messung', 'err');
-    startVolume();
-  }
-}
-
-/* ======================= Finger-Test ======================= */
-const MP_VERSION = '0.10.14';
-const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
-const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task';
-
-// Niedrigere Schwellen (Standard 0.5): Hand wird schon erkannt, wenn nur ein Teil sichtbar ist
-const THRESHOLD = 0.3;
-
-let recognizerPromise = null;
-let recognizerReady = false;
-const setMp = (t) => { $('mpStatus').textContent = 'Handerkennung: ' + t; };
-
-function loadRecognizer() {
-  if (!recognizerPromise) {
-    setMp('lädt …');
-    recognizerPromise = (async () => {
-      const { FilesetResolver, GestureRecognizer } = await import(`${MP_BASE}/vision_bundle.mjs`);
-      const fileset = await FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
-      const options = (delegate) => ({
-        baseOptions: { modelAssetPath: MODEL_URL, delegate },
-        runningMode: 'VIDEO',
-        numHands: 1,
-        minHandDetectionConfidence: THRESHOLD,
-        minHandPresenceConfidence: THRESHOLD,
-        minTrackingConfidence: THRESHOLD
-      });
-      try {
-        return await GestureRecognizer.createFromOptions(fileset, options('GPU'));
-      } catch (e) {
-        // manche Handys können kein GPU – dann über den Prozessor
-        return await GestureRecognizer.createFromOptions(fileset, options('CPU'));
-      }
-    })();
-    recognizerPromise.then(
-      () => { recognizerReady = true; setMp('bereit ✅'); },
-      (e) => { recognizerPromise = null; setMp('Fehler beim Laden (' + (e && e.message || e) + ') – wird beim Finger-Test erneut versucht'); }
-    );
-  }
-  return recognizerPromise;
-}
-
-// Gleich beim Öffnen der Seite im Hintergrund laden
-loadRecognizer();
-
-const GESTURES = {
-  Pointing_Up: '☝️ Zeigefinger', Open_Palm: '🖐 offene Hand', Closed_Fist: '✊ Faust',
-  Victory: '✌️ Victory', Thumb_Up: '👍 Daumen hoch', Thumb_Down: '👎 Daumen runter',
-  ILoveYou: '🤟 I love you', None: 'keine bekannte Geste'
 };
 
-async function startFinger() {
-  $('btnFinger').classList.add('active');
-  $('btnFinger').textContent = '⏹ Stopp';
-  $('fingerPanel').classList.remove('hidden');
-  $('fingerHit').textContent = '';
-
-  const video = $('video'), canvas = $('canvas'), c = canvas.getContext('2d');
-  const status = (t) => { $('fingerStatus').textContent = t; };
-  let running = true, stream = null, raf = 0;
-
-  stopCurrent = () => {
-    running = false;
-    cancelAnimationFrame(raf);
-    if (stream) stream.getTracks().forEach((t) => t.stop());
-    video.srcObject = null;
-    c.clearRect(0, 0, canvas.width, canvas.height);
-  };
-
-  try {
-    status('Starte Kamera …');
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false
-    });
-    if (!running) { stream.getTracks().forEach((t) => t.stop()); return; }
-    video.srcObject = stream;
-    await video.play();
-
-    if (!recognizerReady) status('Warte auf Handerkennung …');
-    const recognizer = await loadRecognizer();
-    if (!running) return;
-    status('Läuft – Hand in die Kamera halten.');
-
-    let lastVideoTime = -1, frames = 0, fps = 0, fpsStart = performance.now();
-    const loop = () => {
-      if (!running) return;
-      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          $('stage').style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
-        }
-        const res = recognizer.recognizeForVideo(video, performance.now());
-        c.clearRect(0, 0, canvas.width, canvas.height);
-
-        frames++;
-        const now = performance.now();
-        if (now - fpsStart >= 1000) { fps = frames; frames = 0; fpsStart = now; }
-
-        if (res.landmarks && res.landmarks.length) {
-          const lm = res.landmarks[0];
-          c.fillStyle = 'rgba(255,255,255,0.7)';
-          for (const p of lm) {
-            c.beginPath(); c.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2); c.fill();
-          }
-          const tip = lm[8]; // Spitze des Zeigefingers
-          c.fillStyle = '#facc15';
-          c.beginPath(); c.arc(tip.x * canvas.width, tip.y * canvas.height, 16, 0, Math.PI * 2); c.fill();
-
-          const g = res.gestures && res.gestures[0] && res.gestures[0][0];
-          const name = g ? (GESTURES[g.categoryName] || g.categoryName) : '?';
-          const score = g ? Math.round(g.score * 100) : 0;
-          $('fingerHit').textContent = (g && g.categoryName === 'Pointing_Up') ? '☝️ Finger erkannt!' : '✋ Hand gesehen';
-          status(`Geste: ${name} (${score} %) · ${fps} Bilder/s`);
-        } else {
-          $('fingerHit').textContent = '';
-          status(`Keine Hand im Bild · ${fps} Bilder/s`);
-        }
+// Ersatz, wenn die Spracherkennung nicht geht: lauter Ton löst die Reaktion aus
+let volumeStarted = false;
+function startVolume() {
+  if (volumeStarted) return;
+  volumeStarted = true;
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    if (!audioCtx) return;
+    audioCtx.resume();
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    const data = new Float32Array(analyser.fftSize);
+    let last = 0;
+    const tick = () => {
+      analyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+      if (rms > 0.06 && Date.now() - last > 1500 && state.phase === 'waiting') {
+        last = Date.now();
+        react('lauter Ton');
       }
-      raf = requestAnimationFrame(loop);
+      requestAnimationFrame(tick);
     };
-    loop();
-  } catch (e) {
-    const msg = e && e.name === 'NotAllowedError' ? 'Kamera nicht erlaubt' : ((e && e.message) || String(e));
-    status('Fehler: ' + msg);
-  }
+    tick();
+  }).catch(() => setSr('Mikrofon nicht erlaubt'));
 }
+
+/* ======================= Start ======================= */
+$('startBtn').addEventListener('click', () => {
+  // Ton und Sprachausgabe müssen durch eine Berührung freigeschaltet werden
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (AC) { audioCtx = new AC(); audioCtx.resume(); }
+  if ('speechSynthesis' in window) {
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+  }
+  $('start').remove();
+  setSr('startet …');
+  listener.init();
+  nextAnimal();
+});
+
+renderDebug();
 </script>
 </body>
 </html>
