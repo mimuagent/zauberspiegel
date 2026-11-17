@@ -162,9 +162,13 @@ function matchAnimal(texts, candidates = ANIMALS) {
 }
 
 /* ======================= Testinfo ======================= */
-let dbgSr = '–', dbgHeard = '–', dbgLast = '–';
-function renderDebug() { $('debug').textContent = `🎤 ${dbgSr} · gehört: ${dbgHeard} · Auslöser: ${dbgLast}`; }
+let dbgSr = '–', dbgVol = '', dbgHeard = '–', dbgLast = '–';
+function renderDebug() {
+  $('debug').textContent = `🎤 ${dbgSr}` + (dbgVol ? ` · Ersatz: ${dbgVol}` : '') +
+    ` · gehört: ${dbgHeard} · Auslöser: ${dbgLast}`;
+}
 function setSr(t) { dbgSr = t; renderDebug(); }
+function setVol(t) { dbgVol = t; renderDebug(); }
 
 /* ======================= Ablauf ======================= */
 // Phasen: start → entering → waiting → reacting → leaving → entering …
@@ -333,40 +337,75 @@ function handleHeard(texts, isFinal) {
 }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported'];
+// Endgültig nur bei echten Sperren – alles andere wird erneut versucht
+const HARD_FATAL = ['not-allowed', 'service-not-allowed', 'language-not-supported'];
+const MAX_SOFT_ERRORS = 5;
 
 const listener = {
-  rec: null, wanted: false, running: false, fatal: false,
+  rec: null,          // aktuelle Spracherkennung (bei jedem Start neu angelegt)
+  wanted: false,      // soll gerade zugehört werden?
+  state: 'off',       // off | starting | running
+  fatal: false,
+  starts: 0, softErrors: 0, lastErr: '–', startedAt: 0, retryAt: 0,
   pendingSound: false, soundTimer: 0,
 
   init() {
-    if (!SR) { setSr('Spracherkennung fehlt → Lautstärke'); startVolume(); return; }
-    const rec = this.rec = new SR();
+    if (!SR) {
+      this.fatal = true;
+      setSr('keine Spracherkennung im Browser');
+      startVolume();
+      return;
+    }
+    // Kontrolle: prüft jede Sekunde, ob zugehört wird, und startet sonst neu
+    setInterval(() => this.watchdog(), 1000);
+  },
+
+  show(text) { setSr(`${text} · Start #${this.starts} · letzter Fehler: ${this.lastErr}`); },
+
+  create() {
+    const rec = new SR();
     rec.lang = 'de-DE';
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 3;
+    const mine = () => rec === this.rec; // Ereignisse alter, verworfener Instanzen ignorieren
 
-    rec.onstart = () => { this.running = true; setSr('hört zu ✅'); };
+    rec.onstart = () => { if (!mine()) return; this.state = 'running'; this.show('hört zu ✅'); };
     rec.onend = () => {
-      this.running = false;
+      if (!mine()) return;
+      this.rec = null;
+      this.state = 'off';
       this.soundEnded();
-      if (this.wanted && !this.fatal) setTimeout(() => this.startSafe(), 250);
-      else if (!this.fatal) setSr('pausiert');
+      if (this.wanted) setTimeout(() => this.startNow(), 250);
     };
-    rec.onsoundstart = () => this.soundStarted();
-    rec.onspeechstart = () => this.soundStarted();
-    rec.onsoundend = () => this.soundEnded();
-    rec.onspeechend = () => this.soundEnded();
-    rec.onnomatch = () => { this.pendingSound = true; this.soundEnded(); };
+    rec.onsoundstart = () => { if (!mine()) return; this.softErrors = 0; this.soundStarted(); };
+    rec.onspeechstart = () => { if (!mine()) return; this.softErrors = 0; this.soundStarted(); };
+    rec.onsoundend = () => { if (mine()) this.soundEnded(); };
+    rec.onspeechend = () => { if (mine()) this.soundEnded(); };
+    rec.onnomatch = () => { if (!mine()) return; this.pendingSound = true; this.soundEnded(); };
     rec.onerror = (ev) => {
-      if (FATAL.includes(ev.error)) {
+      if (!mine()) return;
+      if (ev.error === 'no-speech' || ev.error === 'aborted') return; // normal, läuft weiter
+      this.lastErr = ev.error;
+      if (HARD_FATAL.includes(ev.error)) {
         this.fatal = true;
-        setSr('Fehler: ' + ev.error + ' → Lautstärke');
+        this.show('gesperrt');
         startVolume();
+        return;
+      }
+      this.softErrors++;
+      this.retryAt = Date.now() + 1000; // kurz warten, dann neu versuchen
+      if (this.softErrors >= MAX_SOFT_ERRORS) {
+        this.fatal = true;
+        this.show(`${MAX_SOFT_ERRORS} Fehler hintereinander`);
+        startVolume();
+      } else {
+        this.show(`Fehler, neuer Versuch (${this.softErrors}/${MAX_SOFT_ERRORS})`);
       }
     };
     rec.onresult = (ev) => {
+      if (!mine()) return;
+      this.softErrors = 0;
       this.pendingSound = false;
       clearTimeout(this.soundTimer);
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -379,18 +418,53 @@ const listener = {
         if (texts.length) handleHeard(texts, r.isFinal);
       }
     };
+    return rec;
   },
 
-  startSafe() {
-    if (!this.rec || this.fatal || !this.wanted || this.running) return;
-    try { this.rec.start(); } catch (e) { /* läuft schon */ }
+  startNow() {
+    if (!SR || this.fatal || !this.wanted || this.state !== 'off' || Date.now() < this.retryAt) return;
+    this.rec = this.create();
+    this.state = 'starting';
+    this.startedAt = Date.now();
+    this.starts++;
+    this.show('startet …');
+    try {
+      this.rec.start();
+    } catch (e) {
+      this.lastErr = 'Start: ' + (e.name || e.message);
+      this.rec = null;
+      this.state = 'off';
+      this.retryAt = Date.now() + 1000;
+      this.show('Start fehlgeschlagen');
+    }
   },
-  resume() { this.wanted = true; this.startSafe(); },
+
+  watchdog() {
+    if (this.fatal || !this.wanted) return;
+    if (this.state === 'off') {
+      this.startNow();
+    } else if (this.state === 'starting' && Date.now() - this.startedAt > 4000) {
+      this.lastErr = 'Start hängt';
+      this.drop();
+      this.startNow();
+    }
+  },
+
+  // aktuelle Instanz verwerfen (ihre späteren Ereignisse werden ignoriert)
+  drop() {
+    const r = this.rec;
+    this.rec = null;
+    this.state = 'off';
+    if (r) { try { r.abort(); } catch (e) {} }
+  },
+
+  resume() { this.wanted = true; this.startNow(); },
   pause() {
     this.wanted = false;
     this.pendingSound = false;
     clearTimeout(this.soundTimer);
-    if (this.rec) { try { this.rec.abort(); } catch (e) {} }
+    this.drop();
+    if (!this.fatal) this.show('pausiert');
   },
 
   // Etwas gehört, aber kein Wort verstanden → Tier horcht auf
@@ -405,18 +479,21 @@ const listener = {
 };
 
 // Ersatz, wenn die Spracherkennung nicht geht: lauter Ton löst die Reaktion aus
-let volumeStarted = false;
+let volumeStarted = false, volumeTries = 0;
 function startVolume() {
   if (volumeStarted) return;
   volumeStarted = true;
+  volumeTries++;
+  setVol('startet …');
   navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-    if (!audioCtx) return;
+    if (!audioCtx) { setVol('kein Audio'); return; }
     audioCtx.resume();
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 1024;
     audioCtx.createMediaStreamSource(stream).connect(analyser);
     const data = new Float32Array(analyser.fftSize);
     let last = 0;
+    setVol('Lautstärke aktiv ✅');
     const tick = () => {
       analyser.getFloatTimeDomainData(data);
       let sum = 0;
@@ -429,7 +506,18 @@ function startVolume() {
       requestAnimationFrame(tick);
     };
     tick();
-  }).catch(() => setSr('Mikrofon nicht erlaubt'));
+  }).catch((e) => {
+    const names = { NotAllowedError: 'Mikrofon nicht erlaubt', NotReadableError: 'Mikrofon belegt', NotFoundError: 'kein Mikrofon' };
+    const msg = names[e.name] || e.name || e.message;
+    // belegtes Mikrofon: bis zu 3 Versuche
+    if (e.name === 'NotReadableError' && volumeTries < 3) {
+      setVol(msg + ' – neuer Versuch');
+      volumeStarted = false;
+      setTimeout(startVolume, 2000);
+    } else {
+      setVol(msg);
+    }
+  });
 }
 
 /* ======================= Start ======================= */
