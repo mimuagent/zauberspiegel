@@ -1,6 +1,6 @@
 // Service Worker: erst aus dem Netz laden (immer die neueste Version),
 // nur ohne Internet auf die zuletzt gespeicherte Kopie zurückgreifen.
-const CACHE = 'zauberspiegel-v1';
+const CACHE = 'zauberspiegel-v2';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png',
   './sounds/hund.wav', './sounds/katze.wav', './sounds/kuh.wav', './sounds/schaf.wav',

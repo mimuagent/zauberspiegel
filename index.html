@@ -25,17 +25,50 @@
   }
   .sun {
     position: absolute; top: 7%; right: 9%; width: 18vmin; height: 18vmin; border-radius: 50%;
-    background: #ffd84d; box-shadow: 0 0 50px #ffe680;
+    background: #ffd84d; box-shadow: 0 0 50px #ffe680; cursor: pointer;
+    transition: transform .6s ease, box-shadow .6s ease, background .6s ease;
   }
+  .sun::before { content: ""; position: absolute; inset: -4vmin; border-radius: 50%; } /* größere Tippfläche */
+  /* Sonnenstrahlen: erscheinen beim Antippen und drehen sich */
+  .sun .rays {
+    position: absolute; inset: -60%; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: repeating-conic-gradient(from 0deg, rgba(255, 210, 60, .95) 0deg 9deg, transparent 9deg 30deg);
+    -webkit-mask: radial-gradient(circle, transparent 36%, #000 38%, #000 68%, transparent 70%);
+            mask: radial-gradient(circle, transparent 36%, #000 38%, #000 68%, transparent 70%);
+    transition: opacity .5s ease;
+  }
+  .sun.shine { transform: scale(1.25); background: #ffe14d; }
+  /* Leuchten als weicher Lichtkranz um die Sonne */
+  .sun::after {
+    content: ""; position: absolute; inset: -110%; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle closest-side, rgba(255, 236, 140, 0) 30%, rgba(255, 236, 140, .8) 32%, rgba(255, 245, 190, .35) 60%, rgba(255, 245, 190, 0) 100%);
+    transition: opacity .6s ease;
+  }
+  .sun.shine::after { opacity: 1; }
+  .sun.shine .rays { opacity: 1; animation: spin 6s linear infinite, raypulse 1s ease-in-out infinite alternate; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes raypulse { from { scale: .92; } to { scale: 1.08; } }
+  #stage.sunny { background: linear-gradient(#a6dcff 0%, #e6f6ff 62%, #93d97e 62%, #6bb85c 100%); }
+  #stage { transition: background .8s ease; }
+
   .cloud {
     position: absolute; height: 8vmin; width: 26vmin; border-radius: 8vmin; background: #fff; opacity: .9;
+    cursor: pointer; transition: background .5s ease;
   }
   .cloud::before, .cloud::after {
-    content: ""; position: absolute; background: #fff; border-radius: 50%;
+    content: ""; position: absolute; background: #fff; border-radius: 50%; transition: background .5s ease;
   }
   .cloud::before { width: 11vmin; height: 11vmin; left: 4vmin; top: -5vmin; }
   .cloud::after { width: 9vmin; height: 9vmin; left: 13vmin; top: -3.5vmin; }
-  .c1 { top: 12%; left: 8%; } .c2 { top: 26%; left: 55%; transform: scale(.7); }
+  .c1 { top: 12%; left: 8%; } .c2 { top: 26%; left: 55%; scale: .7; }
+  /* Regenwolke: wird grau und wackelt kurz */
+  .cloud.rain, .cloud.rain::before, .cloud.rain::after { background: #aab6c4; }
+  .cloud.rain { animation: cloudwobble .5s ease-in-out 1; }
+  @keyframes cloudwobble { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  .drop {
+    position: absolute; width: 4px; height: 16px; border-radius: 2px; pointer-events: none;
+    background: linear-gradient(rgba(90, 169, 230, 0), #4a9be0);
+  }
 
   /* ---------- Tier ---------- */
   #animal {
@@ -93,7 +126,7 @@
   #mirror {
     position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px;
     width: 26vmin; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden;
-    border: 3px solid #fff; background: #000; opacity: .9; display: none;
+    border: 3px solid #fff; background: #000; opacity: .9; display: none; pointer-events: none;
     transform: scaleX(-1); /* Spiegelbild */
   }
   #mirror.on { display: block; }
@@ -145,7 +178,7 @@
 <body>
 
 <div id="stage">
-  <div class="sun"></div>
+  <div class="sun" id="sun"><div class="rays"></div></div>
   <div class="cloud c1"></div>
   <div class="cloud c2"></div>
   <div id="mirror">
@@ -1133,6 +1166,52 @@ $('parent').addEventListener('pointerdown', (e) => {
 });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => $('parent').addEventListener(ev, () => clearTimeout(parentTimer)));
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+/* ======================= Wetter ======================= */
+// Wolke antippen: sie wird grau und es regnet ein paar Sekunden
+function rain(cloud) {
+  if (cloud.classList.contains('rain')) return;
+  cloud.classList.add('rain');
+  const stage = $('stage');
+  const sr = stage.getBoundingClientRect();
+  const cr = cloud.getBoundingClientRect();
+  const DURATION = 3500;
+  const start = performance.now();
+  const spawn = () => {
+    if (performance.now() - start > DURATION) {
+      setTimeout(() => cloud.classList.remove('rain'), 900);
+      return;
+    }
+    for (let k = 0; k < 2; k++) {
+      const d = document.createElement('div');
+      d.className = 'drop';
+      const x = cr.left - sr.left + 6 + Math.random() * (cr.width - 12);
+      const y0 = cr.bottom - sr.top - 4;
+      const y1 = sr.height * (0.64 + Math.random() * 0.22); // landet auf der Wiese
+      d.style.left = x + 'px';
+      d.style.top = y0 + 'px';
+      stage.insertBefore(d, animalEl); // hinter dem Tier
+      const fall = d.animate(
+        [{ transform: 'translateY(0)', opacity: 0.95 }, { transform: `translateY(${y1 - y0}px)`, opacity: 0.7 }],
+        { duration: 650 + Math.random() * 350, easing: 'ease-in' }
+      );
+      fall.onfinish = () => d.remove();
+    }
+    setTimeout(spawn, 60);
+  };
+  spawn();
+}
+document.querySelectorAll('.cloud').forEach((c) => c.addEventListener('pointerdown', (e) => { e.preventDefault(); rain(c); }));
+
+// Sonne antippen: sie wird größer, leuchtet und strahlt ein paar Sekunden
+let sunTimer = 0;
+$('sun').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  $('sun').classList.add('shine');
+  $('stage').classList.add('sunny');
+  clearTimeout(sunTimer);
+  sunTimer = setTimeout(() => { $('sun').classList.remove('shine'); $('stage').classList.remove('sunny'); }, 4000);
+});
 
 // Offline-Fähigkeit und App-Installation
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
