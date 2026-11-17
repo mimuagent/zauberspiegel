@@ -1,0 +1,16 @@
+{
+  "name": "Zauberspiegel-Tiere",
+  "short_name": "Zaubertiere",
+  "description": "Tiere, die zurückwinken und ihr Geräusch machen, wenn das Kind sie benennt.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#8fd3ff",
+  "theme_color": "#8fd3ff",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

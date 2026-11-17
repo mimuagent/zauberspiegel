@@ -2,14 +2,20 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Zauberspiegel-Tiere</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#8fd3ff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
   body {
     font-family: system-ui, -apple-system, sans-serif;
-    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   }
 
   /* ---------- Bühne ---------- */
@@ -93,6 +99,21 @@
   #mirror.on { display: block; }
   #mirror video, #mirror canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 
+  /* Testanzeigen sind für das Kind unsichtbar. Das Kamerabild bleibt nur durchsichtig,
+     damit das Handy die Kamera nicht anhält. Elternecke: lange oben links drücken. */
+  body:not(.testmode) #mirror { opacity: 0; }
+  body:not(.testmode) #debug { display: none; }
+  #parent {
+    position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 4;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 6;
+    background: rgba(0,0,0,.7); color: #fff; padding: 8px 14px; border-radius: 10px; font-size: 15px;
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
   @keyframes hop     { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-10%) rotate(4deg); } }
   @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04, .97); } }
   @keyframes jump    { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-25%) scale(1.08); } 70% { transform: translateY(0) scale(1.05, .92); } }
@@ -136,6 +157,8 @@
     <div id="body"></div>
   </div>
   <div id="debug"></div>
+  <div id="parent"></div>
+  <div id="toast"></div>
 </div>
 
 <div id="start">
@@ -498,8 +521,22 @@ async function walk(from, to, ms) {
   anim.cancel();
 }
 
+// Zufällige Reihenfolge: jedes Tier kommt einmal pro Runde, nie zweimal direkt hintereinander
+let animalBag = [];
+function pickAnimal() {
+  if (!animalBag.length) {
+    animalBag = ANIMALS.slice();
+    for (let i = animalBag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [animalBag[i], animalBag[j]] = [animalBag[j], animalBag[i]];
+    }
+    if (animalBag[animalBag.length - 1] === state.current) animalBag.unshift(animalBag.pop());
+  }
+  return animalBag.pop();
+}
+
 async function nextAnimal() {
-  state.current = ANIMALS[state.index % ANIMALS.length];
+  state.current = pickAnimal();
   state.index++;
   bodyEl.innerHTML = svgFor(state.current.svg);
   // größere Tiere (Elefant) entsprechend größer zeichnen
@@ -1055,10 +1092,58 @@ function camLoop(cam, video) {
 }
 
 // nur für Tests im Browser
-window.zsDebug = { waveBack, wave, motionWave, sounds: () => Object.keys(soundBuf), say: (t) => handleHeard([t], true) };
+window.zsDebug = { waveBack, wave, motionWave, sounds: () => Object.keys(soundBuf), say: (t) => handleHeard([t], true), current: () => state.current && state.current.name };
+
+/* ======================= Kindgerecht ======================= */
+// Bildschirm bleibt an, solange gespielt wird
+let wakeLock = null;
+async function keepScreenOn() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.phase !== 'start') keepScreenOn();
+});
+
+// Zurück-Taste/-Geste verlässt das Spiel nicht versehentlich
+function guardBackButton() {
+  history.pushState({ zs: 1 }, '');
+  window.addEventListener('popstate', () => history.pushState({ zs: 1 }, ''));
+}
+
+// Elternecke: 1,5 Sekunden oben links drücken schaltet die Testanzeigen ein/aus
+let testMode = false;
+try { testMode = localStorage.getItem('zs-test') === '1'; } catch (e) {}
+document.body.classList.toggle('testmode', testMode);
+let toastTimer = 0, parentTimer = 0;
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1800);
+}
+$('parent').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  clearTimeout(parentTimer);
+  parentTimer = setTimeout(() => {
+    testMode = !testMode;
+    document.body.classList.toggle('testmode', testMode);
+    try { localStorage.setItem('zs-test', testMode ? '1' : '0'); } catch (e) {}
+    toast(testMode ? 'Testanzeige an' : 'Testanzeige aus');
+  }, 1500);
+});
+['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => $('parent').addEventListener(ev, () => clearTimeout(parentTimer)));
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Offline-Fähigkeit und App-Installation
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 /* ======================= Start ======================= */
 $('startBtn').addEventListener('click', () => {
+  // Vollbild (muss direkt beim Tippen passieren)
+  const el = document.documentElement;
+  try { const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => {}); } catch (e) {}
+  keepScreenOn();
+  guardBackButton();
   // Ton und Sprachausgabe müssen durch eine Berührung freigeschaltet werden
   const AC = window.AudioContext || window.webkitAudioContext;
   if (AC) { audioCtx = new AC(); audioCtx.resume(); decodeSounds().then(releaseAudio); }
