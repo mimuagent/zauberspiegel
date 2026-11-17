@@ -61,7 +61,7 @@
   #animal.happy   #body { animation: jump .5s ease-out 3; }
   #animal.hint    #body { animation: jump .5s ease-out 2; }
   #animal.listen  #body { animation: tilt 1.2s ease-in-out 1; }
-  #animal.no      #body { animation: shake .7s ease-in-out 1; }
+  #animal.no      #body { animation: shake .9s ease-in-out 1; }
   #animal.waveback #body { animation: sway 1s ease-in-out 2; }
 
   @keyframes sway { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
@@ -97,7 +97,7 @@
   @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04, .97); } }
   @keyframes jump    { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-25%) scale(1.08); } 70% { transform: translateY(0) scale(1.05, .92); } }
   @keyframes tilt    { 0%,100% { transform: rotate(0); } 30%,70% { transform: rotate(12deg); } }
-  @keyframes shake   { 0%,100% { transform: rotate(0); } 20% { transform: rotate(-10deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(-8deg); } 80% { transform: rotate(6deg); } }
+  @keyframes shake   { 0%,100% { transform: rotate(0); } 15% { transform: rotate(-16deg); } 35% { transform: rotate(16deg); } 55% { transform: rotate(-14deg); } 75% { transform: rotate(12deg); } 90% { transform: rotate(-6deg); } }
 
   /* ---------- Testinfo unten ---------- */
   #debug {
@@ -543,7 +543,8 @@ function wrongAnimal(how) {
   if (state.phase !== 'waiting') return;
   state.lastActivity = Date.now();
   dbgLast = how; renderDebug();
-  oneShot('no', 800);
+  oneShot('no', 1000);
+  showBubble('❓', 1200);
 }
 
 // Kind winkt: Tier hebt die Pfote und winkt zurück (bleibt aber stehen)
@@ -683,18 +684,46 @@ function handleHeard(texts, isFinal) {
 }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-// Endgültig nur bei echten Sperren – alles andere (z. B. "network") wird immer wieder versucht
-const HARD_FATAL = ['not-allowed', 'service-not-allowed', 'language-not-supported'];
+// Fehler werden immer wieder versucht. Nur eine Sperre ("not-allowed"), die sich 3-mal hintereinander
+// wiederholt, oder eine fehlende Sprache beendet das Zuhören.
+const BLOCKED = ['not-allowed', 'service-not-allowed'];
+const MAX_BLOCKED = 3;
 const RESTART_DELAY = 700;   // Pause vor jedem Neustart, damit Android die alte Erkennung freigeben kann
 const MAX_RETRY_DELAY = 10000;
+
+// Wenn möglich auf dem Handy erkennen (ohne Internet): Sprachpaket prüfen und ggf. installieren.
+// Muss beim Tippen auf "Los geht's" aufgerufen werden.
+function prepareLocalSpeech() {
+  const S = window.SpeechRecognition;
+  if (!S || typeof S.available !== 'function') { listener.mode = 'Internet'; return; }
+  const opts = { langs: ['de-DE'], processLocally: true };
+  S.available(opts).then((r) => {
+    if (r === 'available') { listener.useLocal(); return; }
+    if (r === 'downloadable' || r === 'downloading') {
+      listener.mode = 'Internet, Sprachpaket lädt …';
+      return S.install(opts).then((ok) => {
+        if (ok) listener.useLocal(); else listener.mode = 'Internet';
+      });
+    }
+    listener.mode = 'Internet';
+  }).catch(() => { listener.mode = 'Internet'; });
+}
 
 const listener = {
   rec: null,          // aktuelle Spracherkennung (bei jedem Start neu angelegt)
   wanted: false,      // soll gerade zugehört werden?
   state: 'off',       // off | starting | running
   fatal: false,
-  starts: 0, softErrors: 0, lastErr: '–', startedAt: 0, retryAt: 0,
+  starts: 0, softErrors: 0, blockedCount: 0, lastErr: '–', startedAt: 0, retryAt: 0,
   pendingSound: false, soundTimer: 0,
+  local: false, mode: 'Internet',   // local = Erkennung auf dem Handy
+
+  // ab dem nächsten Start auf dem Handy erkennen
+  useLocal() {
+    this.local = true;
+    this.mode = 'auf dem Handy';
+    if (this.state !== 'off') this.drop(); // neu starten, damit es sofort greift
+  },
 
   init() {
     if (!SR) {
@@ -707,7 +736,7 @@ const listener = {
     setInterval(() => this.watchdog(), 1000);
   },
 
-  show(text) { setSr(`${text} · Start #${this.starts} · Fehler: ${this.lastErr}`); },
+  show(text) { setSr(`${text} · ${this.mode} · Start #${this.starts} · Fehler: ${this.lastErr}`); },
 
   create() {
     const rec = new SR();
@@ -715,6 +744,7 @@ const listener = {
     rec.continuous = true;
     rec.interimResults = true;
     rec.maxAlternatives = 3;
+    if (this.local) rec.processLocally = true;
     const mine = () => rec === this.rec; // Ereignisse alter, verworfener Instanzen ignorieren
 
     rec.onstart = () => { if (!mine()) return; this.state = 'running'; this.show('hört zu ✅'); };
@@ -734,14 +764,17 @@ const listener = {
     rec.onspeechend = () => { if (mine()) this.soundEnded(); };
     rec.onnomatch = () => { if (!mine()) return; this.pendingSound = true; this.soundEnded(); };
     rec.onerror = (ev) => {
-      if (!mine()) return;
+      if (!mine() || this.fatal) return;
       if (ev.error === 'no-speech' || ev.error === 'aborted') return; // normal, läuft weiter
       this.lastErr = ev.error;
-      if (HARD_FATAL.includes(ev.error)) {
-        this.fatal = true;
-        this.show('gesperrt');
-        startVolume();
-        return;
+      if (ev.error === 'language-not-supported') { this.fatal = true; this.show('Deutsch nicht verfügbar'); return; }
+      // Erkennung auf dem Handy klappt nicht → zurück zur Erkennung übers Internet
+      if (this.local && ev.error === 'service-not-allowed') {
+        this.local = false;
+        this.mode = 'Internet';
+      } else if (BLOCKED.includes(ev.error)) {
+        this.blockedCount++;
+        if (this.blockedCount >= MAX_BLOCKED) { this.fatal = true; this.show('Mikrofon gesperrt'); return; }
       }
       // nie aufgeben: wachsende Pausen 1 s, 2 s, 4 s, 8 s, dann alle 10 s
       this.softErrors++;
@@ -752,6 +785,7 @@ const listener = {
     rec.onresult = (ev) => {
       if (!mine()) return;
       this.softErrors = 0;
+      this.blockedCount = 0;
       this.pendingSound = false;
       clearTimeout(this.soundTimer);
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -1033,6 +1067,7 @@ $('startBtn').addEventListener('click', () => {
   }
   $('start').remove();
   setSr('startet …');
+  prepareLocalSpeech();
   listener.init();
   startCamera();
   nextAnimal();
