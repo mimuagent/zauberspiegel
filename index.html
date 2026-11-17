@@ -69,6 +69,11 @@
     position: absolute; width: 4px; height: 16px; border-radius: 2px; pointer-events: none;
     background: linear-gradient(rgba(90, 169, 230, 0), #4a9be0);
   }
+  /* Matschwolke: wird braun, Matschtropfen sind dicker und rund */
+  .cloud.muddy, .cloud.muddy::before, .cloud.muddy::after { background: #9a7b5c; }
+  .cloud.muddy { animation: cloudwobble .5s ease-in-out 1; }
+  .drop.mud { width: 11px; height: 13px; border-radius: 50% 50% 45% 45%; background: #7a5230; }
+  .sparkle { position: absolute; font-size: 30px; pointer-events: none; z-index: 3; }
 
   /* ---------- Tier ---------- */
   #animal {
@@ -79,6 +84,7 @@
   #body {
     width: min(80vw, 54vh); cursor: pointer;
     transform-origin: 50% 100%;
+    touch-action: none; /* Reiben mit dem Finger, ohne dass die Seite scrollt */
   }
   #body svg { display: block; width: 100%; height: auto; overflow: visible; }
   .bubble {
@@ -573,6 +579,7 @@ async function nextAnimal() {
   state.current = pickAnimal();
   state.index++;
   bodyEl.innerHTML = svgFor(state.current.svg);
+  mudSpots = []; state.dirty = false;
   // größere Tiere (Elefant) entsprechend größer zeichnen
   bodyEl.style.width = state.current.size ? `calc(min(80vw, 54vh) * ${state.current.size})` : '';
   state.phase = 'entering';
@@ -589,6 +596,17 @@ async function react(how) {
   if (state.phase !== 'waiting') return;
   state.phase = 'reacting';
   dbgLast = how; renderDebug();
+  // Schmutziges Tier macht sein Geräusch, bleibt aber, bis es sauber ist
+  if (state.dirty) {
+    setMode('happy');
+    showBubble(state.current.say);
+    await Promise.all([playSound(state.current), wait(1600)]);
+    hideBubble();
+    setMode('waiting');
+    state.phase = 'waiting';
+    state.lastActivity = Date.now();
+    return;
+  }
   // Zuhören läuft weiter (jeder Neustart riskiert Fehler); Gehörtes wird außerhalb von 'waiting' ignoriert
   setMode('happy');
   showBubble(state.current.say);
@@ -634,15 +652,25 @@ setInterval(() => {
   if (state.phase === 'waiting' && Date.now() - state.lastActivity > 8000) {
     state.lastActivity = Date.now();
     oneShot('hint', 1000);
-    showBubble('👋', 1500);
+    showBubble(state.dirty ? '🧽' : '👋', 1500);
   }
 }, 1000);
 
-// Antippen
+// Antippen (sauberes Tier) bzw. Sauberreiben (schmutziges Tier)
+let rubbing = false, lastRub = null;
 bodyEl.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  if (state.dirty) {
+    if (state.phase !== 'waiting') return;
+    rubbing = true; lastRub = null;
+    try { bodyEl.setPointerCapture(e.pointerId); } catch (err) {}
+    rub(e);
+    return;
+  }
   react('angetippt');
 });
+bodyEl.addEventListener('pointermove', (e) => { if (rubbing) rub(e); });
+['pointerup', 'pointercancel'].forEach((ev) => bodyEl.addEventListener(ev, () => { rubbing = false; lastRub = null; }));
 
 /* ======================= Geräusch ======================= */
 let audioCtx = null;
@@ -1126,7 +1154,7 @@ function camLoop(cam, video) {
 }
 
 // nur für Tests im Browser
-window.zsDebug = { waveBack, wave, motionWave, sounds: () => Object.keys(soundBuf), say: (t) => handleHeard([t], true), current: () => state.current && state.current.name };
+window.zsDebug = { spots: () => mudSpots.map((m) => svgToScreen(m.x, m.y)), phase: () => state.phase, dirty: () => !!state.dirty, waveBack, wave, motionWave, sounds: () => Object.keys(soundBuf), say: (t) => handleHeard([t], true), current: () => state.current && state.current.name };
 
 /* ======================= Kindgerecht ======================= */
 // Bildschirm bleibt an, solange gespielt wird
@@ -1169,23 +1197,24 @@ $('parent').addEventListener('pointerdown', (e) => {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 /* ======================= Wetter ======================= */
-// Wolke antippen: sie wird grau und es regnet ein paar Sekunden
-function rain(cloud) {
-  if (cloud.classList.contains('rain')) return;
-  cloud.classList.add('rain');
+// Wolke antippen: sie wird grau und es regnet ein paar Sekunden (mud = true: braune Matschtropfen)
+function rain(cloud, mud = false) {
+  const cls = mud ? 'muddy' : 'rain';
+  if (cloud.classList.contains(cls)) return;
+  cloud.classList.add(cls);
   const stage = $('stage');
   const sr = stage.getBoundingClientRect();
   const cr = cloud.getBoundingClientRect();
-  const DURATION = 3500;
+  const DURATION = mud ? 2000 : 3500;
   const start = performance.now();
   const spawn = () => {
     if (performance.now() - start > DURATION) {
-      setTimeout(() => cloud.classList.remove('rain'), 900);
+      setTimeout(() => cloud.classList.remove(cls), 900);
       return;
     }
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < (mud ? 1 : 2); k++) {
       const d = document.createElement('div');
-      d.className = 'drop';
+      d.className = mud ? 'drop mud' : 'drop';
       const x = cr.left - sr.left + 6 + Math.random() * (cr.width - 12);
       const y0 = cr.bottom - sr.top - 4;
       const y1 = sr.height * (0.64 + Math.random() * 0.22); // landet auf der Wiese
@@ -1198,11 +1227,168 @@ function rain(cloud) {
       );
       fall.onfinish = () => d.remove();
     }
-    setTimeout(spawn, 60);
+    setTimeout(spawn, mud ? 110 : 60);
   };
   spawn();
 }
-document.querySelectorAll('.cloud').forEach((c) => c.addEventListener('pointerdown', (e) => { e.preventDefault(); rain(c); }));
+
+/* ---------- Matsch ----------
+   Die kleine Wolke (rechts) ist die Matschwolke: Sie zieht über das wartende Tier,
+   wird braun und lässt Matschflecken auf das Tier fallen. Das Kind reibt sie mit dem Finger weg. */
+const SVGNS = 'http://www.w3.org/2000/svg';
+// mögliche Fleckstellen (Zeichnungs-Koordinaten, passen zu allen Tieren: Kopf und Bauch)
+const MUD_SPOTS = [[170, 112], [210, 118], [190, 98], [165, 196], [215, 192], [190, 222], [152, 232], [228, 230], [178, 160], [204, 165]];
+let mudSpots = [];
+
+function svgToScreen(x, y) {
+  const svg = bodyEl.querySelector('svg');
+  const ctm = svg && svg.getScreenCTM();
+  if (!ctm) return null;
+  const p = new DOMPoint(x, y).matrixTransform(ctm);
+  return { x: p.x, y: p.y };
+}
+
+function addMudSpot(x, y) {
+  const svg = bodyEl.querySelector('svg');
+  if (!svg) return;
+  const g = document.createElementNS(SVGNS, 'g');
+  const r = 9 + Math.random() * 5;
+  // unregelmäßiger Klecks aus mehreren Kreisen
+  [[0, 0, r], [r * 0.7, -r * 0.3, r * 0.6], [-r * 0.6, r * 0.4, r * 0.55], [r * 0.2, r * 0.8, r * 0.4], [-r * 1.3, -r * 0.6, r * 0.25]].forEach(([dx, dy, rr]) => {
+    const c = document.createElementNS(SVGNS, 'circle');
+    c.setAttribute('cx', x + dx); c.setAttribute('cy', y + dy); c.setAttribute('r', rr);
+    c.setAttribute('fill', '#7a5230');
+    g.appendChild(c);
+  });
+  g.setAttribute('opacity', '0.92');
+  g.style.transformBox = 'fill-box'; g.style.transformOrigin = '50% 50%';
+  svg.appendChild(g);
+  g.animate([{ transform: 'scale(.3)' }, { transform: 'scale(1.15)' }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-out' });
+  mudSpots.push({ x, y, el: g, dirt: 1 });
+}
+
+function splashOnAnimal(cloud) {
+  const stage = $('stage');
+  const sr = stage.getBoundingClientRect();
+  const cr = cloud.getBoundingClientRect();
+  const free = MUD_SPOTS.filter(([x, y]) => !mudSpots.some((s) => Math.hypot(s.x - x, s.y - y) < 10));
+  const chosen = free.sort(() => Math.random() - 0.5).slice(0, 6);
+  chosen.forEach(([sx, sy], i) => {
+    setTimeout(() => {
+      const jx = sx + (Math.random() * 10 - 5), jy = sy + (Math.random() * 10 - 5);
+      const target = svgToScreen(jx, jy);
+      if (!target) return;
+      const d = document.createElement('div');
+      d.className = 'drop mud';
+      const x0 = cr.left - sr.left + cr.width * (0.3 + Math.random() * 0.4);
+      const y0 = cr.bottom - sr.top - 4;
+      d.style.left = x0 + 'px'; d.style.top = y0 + 'px'; d.style.zIndex = 3;
+      stage.appendChild(d); // vor dem Tier
+      const dx = target.x - sr.left - x0 - 5, dy = target.y - sr.top - y0 - 6;
+      d.animate([{ transform: 'translate(0,0)' }, { transform: `translate(${dx}px, ${dy}px)` }],
+        { duration: 550, easing: 'ease-in' }).onfinish = () => { d.remove(); addMudSpot(jx, jy); };
+    }, i * 220);
+  });
+  return chosen.length * 220 + 600;
+}
+
+async function mudCloud(cloud) {
+  if (cloud.classList.contains('muddy') || cloud.dataset.busy) return;
+  // Tier wartet gerade nicht: Matsch fällt nur auf die Wiese
+  if (state.phase !== 'waiting') { rain(cloud, true); return; }
+  cloud.dataset.busy = '1';
+  state.phase = 'mudding';
+  dbgLast = 'Matschwolke'; renderDebug();
+  // Wolke zieht über den Kopf des Tiers
+  const cr = cloud.getBoundingClientRect();
+  const ar = bodyEl.getBoundingClientRect();
+  const dx = (ar.left + ar.width / 2) - (cr.left + cr.width / 2);
+  const dy = Math.max(0, (ar.top - 4) - cr.bottom); // knapp über dem Kopf
+  const go = cloud.animate([{ translate: '0 0' }, { translate: `${dx}px ${dy}px` }], { duration: 900, easing: 'ease-in-out', fill: 'forwards' });
+  await go.finished.catch(() => {});
+  cloud.classList.add('muddy');
+  await wait(splashOnAnimal(cloud));
+  state.dirty = mudSpots.length > 0;
+  cloud.classList.remove('muddy');
+  const back = cloud.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], { duration: 900, easing: 'ease-in-out', fill: 'forwards' });
+  go.cancel();
+  state.phase = 'waiting';
+  state.lastActivity = Date.now();
+  setMode('waiting');
+  await back.finished.catch(() => {});
+  back.cancel();
+  delete cloud.dataset.busy;
+}
+
+// Reiben: Flecken in der Nähe des Fingers werden blasser und verschwinden
+function rub(e) {
+  const svg = bodyEl.querySelector('svg');
+  const ctm = svg && svg.getScreenCTM();
+  if (!ctm) return;
+  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+  const moved = lastRub ? Math.hypot(p.x - lastRub.x, p.y - lastRub.y) : 4;
+  lastRub = p;
+  state.lastActivity = Date.now();
+  for (const s of mudSpots) {
+    if (Math.hypot(p.x - s.x, p.y - s.y) < 28) {
+      s.dirt -= Math.min(moved, 15) * 0.025;
+      s.el.setAttribute('opacity', String(Math.max(0, s.dirt) * 0.92));
+      if (s.dirt <= 0.05) { s.el.remove(); s.done = true; sparkle(e.clientX, e.clientY, 1); }
+    }
+  }
+  mudSpots = mudSpots.filter((s) => !s.done);
+  if (state.dirty && !mudSpots.length) { state.dirty = false; rubbing = false; celebrate(); }
+}
+
+// Glitzer an einer Bildschirmstelle
+function sparkle(cx, cy, count = 8) {
+  const stage = $('stage');
+  const sr = stage.getBoundingClientRect();
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('div');
+    s.className = 'sparkle';
+    s.textContent = '✨';
+    s.style.left = (cx - sr.left - 15) + 'px';
+    s.style.top = (cy - sr.top - 15) + 'px';
+    stage.appendChild(s);
+    const ang = Math.random() * Math.PI * 2, dist = 40 + Math.random() * 70;
+    s.animate([{ transform: 'translate(0,0) scale(.5)', opacity: 1 },
+               { transform: `translate(${Math.cos(ang) * dist}px, ${Math.sin(ang) * dist - 30}px) scale(1.1)`, opacity: 0 }],
+      { duration: 900 + Math.random() * 400, easing: 'ease-out' }).onfinish = () => s.remove();
+  }
+}
+
+// Sauber! Tier freut sich, läuft einmal im Kreis, setzt sich wieder hin und winkt
+async function celebrate() {
+  state.phase = 'celebrating';
+  dbgLast = 'sauber gerieben'; renderDebug();
+  const ar = bodyEl.getBoundingClientRect();
+  sparkle(ar.left + ar.width / 2, ar.top + ar.height * 0.45, 12);
+  setMode('happy');
+  showBubble(state.current.say);
+  await Promise.all([playSound(state.current), wait(1500)]);
+  hideBubble();
+  setMode('walking');
+  const lap = animalEl.animate([
+    { left: '50%', bottom: '12%', scale: 1 },
+    { left: '74%', bottom: '15%', scale: 0.9 },
+    { left: '50%', bottom: '19%', scale: 0.8 },
+    { left: '26%', bottom: '15%', scale: 0.9 },
+    { left: '50%', bottom: '12%', scale: 1 }
+  ], { duration: 2600, easing: 'linear' });
+  await lap.finished.catch(() => {});
+  setMode('waiting');
+  await wait(350);
+  setMode('waveback');
+  await wait(2000);
+  setMode('waiting');
+  state.phase = 'waiting';
+  state.lastActivity = Date.now();
+}
+
+const clouds = document.querySelectorAll('.cloud');
+clouds[0].addEventListener('pointerdown', (e) => { e.preventDefault(); rain(clouds[0]); });    // Regenwolke
+clouds[1].addEventListener('pointerdown', (e) => { e.preventDefault(); mudCloud(clouds[1]); }); // Matschwolke
 
 // Sonne antippen: sie wird größer, leuchtet und strahlt ein paar Sekunden
 let sunTimer = 0;
