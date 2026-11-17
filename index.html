@@ -74,6 +74,7 @@
   .cloud.muddy { animation: cloudwobble .5s ease-in-out 1; }
   .drop.mud { width: 11px; height: 13px; border-radius: 50% 50% 45% 45%; background: #7a5230; }
   .sparkle { position: absolute; font-size: 30px; pointer-events: none; z-index: 3; }
+  .sponge { position: absolute; font-size: 46px; pointer-events: none; z-index: 3; filter: drop-shadow(0 3px 3px rgba(0,0,0,.25)); }
 
   /* ---------- Tier ---------- */
   #animal {
@@ -649,7 +650,7 @@ function waveBack(how = 'Winken') {
 
 // Aufforderung, wenn 8 Sekunden nichts passiert
 setInterval(() => {
-  if (state.phase === 'waiting' && Date.now() - state.lastActivity > 8000) {
+  if (state.phase === 'waiting' && !state.dirty && Date.now() - state.lastActivity > 8000) {
     state.lastActivity = Date.now();
     oneShot('hint', 1000);
     showBubble(state.dirty ? '🧽' : '👋', 1500);
@@ -1315,6 +1316,7 @@ async function mudCloud(cloud) {
   state.phase = 'waiting';
   state.lastActivity = Date.now();
   setMode('waiting');
+  setTimeout(spongeHint, 400);
   await back.finished.catch(() => {});
   back.cancel();
   delete cloud.dataset.busy;
@@ -1329,6 +1331,7 @@ function rub(e) {
   const moved = lastRub ? Math.hypot(p.x - lastRub.x, p.y - lastRub.y) : 4;
   lastRub = p;
   state.lastActivity = Date.now();
+  lastRubAt = Date.now();
   for (const s of mudSpots) {
     if (Math.hypot(p.x - s.x, p.y - s.y) < 28) {
       s.dirt -= Math.min(moved, 15) * 0.025;
@@ -1357,6 +1360,36 @@ function sparkle(cx, cy, count = 8) {
       { duration: 900 + Math.random() * 400, easing: 'ease-out' }).onfinish = () => s.remove();
   }
 }
+
+// Schwamm-Hinweis: Solange das Tier schmutzig ist, wischt ein Schwamm über einen Fleck,
+// damit man sieht, dass geputzt werden muss. Kommt sofort und dann alle 3,5 s (nicht während das Kind reibt).
+let lastRubAt = 0, lastSpongeAt = 0;
+function spongeHint() {
+  if (!state.dirty || state.phase !== 'waiting' || !mudSpots.length) return;
+  lastSpongeAt = Date.now();
+  const spot = mudSpots[Math.floor(Math.random() * mudSpots.length)];
+  const pos = svgToScreen(spot.x, spot.y);
+  if (!pos) return;
+  const sr = $('stage').getBoundingClientRect();
+  const sp = document.createElement('div');
+  sp.className = 'sponge';
+  sp.textContent = '🧽';
+  sp.style.left = (pos.x - sr.left - 23) + 'px';
+  sp.style.top = (pos.y - sr.top - 23) + 'px';
+  $('stage').appendChild(sp);
+  sp.animate([
+    { transform: 'translateX(0) rotate(0)', opacity: 0 },
+    { transform: 'translateX(-22px) rotate(-12deg)', opacity: 1, offset: 0.15 },
+    { transform: 'translateX(22px) rotate(12deg)', offset: 0.35 },
+    { transform: 'translateX(-22px) rotate(-12deg)', offset: 0.55 },
+    { transform: 'translateX(22px) rotate(12deg)', opacity: 1, offset: 0.8 },
+    { transform: 'translateX(0) rotate(0)', opacity: 0 }
+  ], { duration: 1800, easing: 'ease-in-out' }).onfinish = () => sp.remove();
+}
+setInterval(() => {
+  const now = Date.now();
+  if (state.dirty && state.phase === 'waiting' && now - lastSpongeAt > 3500 && now - lastRubAt > 2500) spongeHint();
+}, 500);
 
 // Sauber! Tier freut sich, läuft einmal im Kreis, setzt sich wieder hin und winkt
 async function celebrate() {
