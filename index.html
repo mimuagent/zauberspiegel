@@ -33,15 +33,15 @@
 
   /* ---------- Tier ---------- */
   #animal {
-    position: absolute; left: -35%; bottom: 24%;
+    position: absolute; left: -35%; bottom: 12%;
     transform: translateX(-50%);
     display: flex; flex-direction: column; align-items: center;
   }
   #body {
-    font-size: min(42vw, 34vh); line-height: 1; cursor: pointer;
+    width: min(80vw, 54vh); cursor: pointer;
     transform-origin: 50% 100%;
-    filter: drop-shadow(0 10px 6px rgba(0,0,0,.25));
   }
+  #body svg { display: block; width: 100%; height: auto; overflow: visible; }
   .bubble {
     position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
     margin-bottom: 14px; padding: .25em .7em; border-radius: 1em;
@@ -64,15 +64,24 @@
   #animal.no      #body { animation: shake .7s ease-in-out 1; }
   #animal.waveback #body { animation: sway 1s ease-in-out 2; }
 
-  /* Pfote zum Zurückwinken */
-  #paw {
-    position: absolute; right: -18%; top: 18%;
-    font-size: min(17vw, 13vh); line-height: 1;
-    transform-origin: 70% 90%; opacity: 0; pointer-events: none;
-  }
-  #paw.wave { opacity: 1; animation: wave .5s ease-in-out 4; }
-  @keyframes wave { 0%,100% { transform: rotate(-20deg); } 50% { transform: rotate(25deg); } }
   @keyframes sway { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-6deg); } 75% { transform: rotate(6deg); } }
+
+  /* Bewegungen innerhalb der Zeichnung */
+  #body .tail, #body .arm, #body .head, #body .eyes { transform-box: fill-box; }
+  #body .tail.wag  { transform-origin: 0% 100%; animation: wag .35s ease-in-out infinite alternate; }
+  #body .tail.slow { transform-origin: 0% 100%; animation: tailsway 1.6s ease-in-out infinite alternate; }
+  #body .eyes { transform-origin: 50% 50%; animation: blink 4s infinite; }
+  #body .mo, #body .arm { opacity: 0; }
+  #animal.happy .head { transform-origin: 50% 100%; animation: yap .3s ease-out 4; }
+  #animal.happy .mo { opacity: 1; }
+  #animal.happy .mc { opacity: 0; }
+  #animal.waveback .arm { opacity: 1; transform-origin: 50% 100%; animation: pawwave .4s ease-in-out infinite alternate; }
+  #animal.waveback .fp { opacity: 0; }
+  @keyframes wag      { from { transform: rotate(-18deg); } to { transform: rotate(22deg); } }
+  @keyframes tailsway { from { transform: rotate(-8deg); } to { transform: rotate(10deg); } }
+  @keyframes blink    { 0%,94%,100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+  @keyframes yap      { 50% { transform: translateY(-8px) rotate(-3deg); } }
+  @keyframes pawwave  { from { transform: rotate(-14deg); } to { transform: rotate(16deg); } }
 
   /* kleiner Kamera-Spiegel oben links (zum Testen) */
   #mirror {
@@ -123,8 +132,7 @@
   </div>
   <div id="animal">
     <div id="bubble" class="bubble"></div>
-    <div id="body">🐶</div>
-    <div id="paw">👋</div>
+    <div id="body"></div>
   </div>
   <div id="debug"></div>
 </div>
@@ -137,7 +145,58 @@
 
 <script type="module">
 const $ = (id) => document.getElementById(id);
-const animalEl = $('animal'), bodyEl = $('body'), bubbleEl = $('bubble'), pawEl = $('paw');
+const animalEl = $('animal'), bodyEl = $('body'), bubbleEl = $('bubble');
+
+/* ======================= Zeichnungen ======================= */
+// Gemeinsamer Bildausschnitt: Tier mittig (x = 190), rechts Platz für die winkende Pfote
+const VIEWBOX = '64 50 252 226';
+
+const DOG_SVG = `
+<ellipse cx="190" cy="262" rx="70" ry="9" fill="#5FAE52"/>
+<g class="tail wag"><path d="M232 220 Q262 205 266 168 Q270 160 262 162 Q252 196 228 206 Z" fill="#E7B47A"/></g>
+<ellipse cx="148" cy="246" rx="24" ry="13" fill="#E7B47A"/>
+<ellipse cx="232" cy="246" rx="24" ry="13" fill="#E7B47A"/>
+<ellipse cx="190" cy="205" rx="54" ry="50" fill="#F2C48D"/>
+<ellipse cx="190" cy="215" rx="30" ry="32" fill="#FBE3C2"/>
+<ellipse cx="172" cy="252" rx="14" ry="10" fill="#FBE3C2"/>
+<ellipse class="fp" cx="208" cy="252" rx="14" ry="10" fill="#FBE3C2"/>
+<g class="head">
+  <path d="M150 100 Q128 104 126 140 Q126 170 142 172 Q156 170 156 140 Z" fill="#A0673A"/>
+  <path d="M230 100 Q252 104 254 140 Q254 170 238 172 Q224 170 224 140 Z" fill="#A0673A"/>
+  <circle cx="190" cy="128" r="48" fill="#F2C48D"/>
+  <ellipse cx="209" cy="124" rx="16" ry="14" fill="#D9935A"/>
+  <g class="eyes"><circle cx="172" cy="124" r="7" fill="#2B1E16"/><circle cx="208" cy="124" r="7" fill="#2B1E16"/><circle cx="174.5" cy="121.5" r="2.4" fill="#FFFFFF"/><circle cx="210.5" cy="121.5" r="2.4" fill="#FFFFFF"/></g>
+  <ellipse cx="190" cy="152" rx="25" ry="18" fill="#FBE3C2"/>
+  <ellipse cx="190" cy="143" rx="9" ry="6.5" fill="#2B1E16"/>
+  <g class="mc"><path d="M178 156 Q184 163 190 157 Q196 163 202 156" stroke="#2B1E16" stroke-width="2.2" fill="none" stroke-linecap="round"/><ellipse cx="193" cy="165" rx="5.5" ry="6.5" fill="#F08FA8"/></g>
+  <g class="mo"><ellipse cx="190" cy="162" rx="11" ry="10" fill="#6B2B2B"/><ellipse cx="190" cy="167" rx="7" ry="4.5" fill="#F08FA8"/></g>
+</g>
+<g transform="rotate(42 239 205)"><g class="arm"><rect x="228" y="140" width="22" height="66" rx="11" fill="#F2C48D" stroke="#D9A066" stroke-width="1.5"/><circle cx="239" cy="140" r="15" fill="#FBE3C2" stroke="#D9A066" stroke-width="1.5"/><path d="M232 132 L232 139 M239 129 L239 137 M246 132 L246 139" stroke="#C99560" stroke-width="2" stroke-linecap="round" fill="none"/></g></g>`;
+
+const CAT_SVG = `
+<ellipse cx="190" cy="262" rx="62" ry="9" fill="#5FAE52"/>
+<g class="tail slow"><path d="M226 240 Q292 242 284 190 Q280 166 266 170 Q276 196 264 214 Q252 230 224 226 Z" fill="#A9B4C2"/></g>
+<ellipse cx="150" cy="244" rx="20" ry="13" fill="#A9B4C2"/>
+<ellipse cx="230" cy="244" rx="20" ry="13" fill="#A9B4C2"/>
+<ellipse cx="190" cy="208" rx="46" ry="50" fill="#A9B4C2"/>
+<ellipse cx="190" cy="218" rx="26" ry="32" fill="#E6EAF0"/>
+<ellipse cx="174" cy="252" rx="13" ry="9" fill="#E6EAF0"/>
+<ellipse class="fp" cx="206" cy="252" rx="13" ry="9" fill="#E6EAF0"/>
+<g class="head">
+  <path d="M146 114 L156 60 L184 92 Z" fill="#A9B4C2"/><path d="M154 104 L159 74 L175 94 Z" fill="#F4B6C2"/>
+  <path d="M234 114 L224 60 L196 92 Z" fill="#A9B4C2"/><path d="M226 104 L221 74 L205 94 Z" fill="#F4B6C2"/>
+  <ellipse cx="190" cy="128" rx="47" ry="42" fill="#A9B4C2"/>
+  <path d="M180 92 Q182 100 180 108 M190 89 L190 106 M200 92 Q198 100 200 108" stroke="#8693A3" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <g class="eyes"><ellipse cx="172" cy="124" rx="8" ry="9" fill="#7FC46B"/><ellipse cx="208" cy="124" rx="8" ry="9" fill="#7FC46B"/><ellipse cx="172" cy="124" rx="2.6" ry="7" fill="#1E2A1A"/><ellipse cx="208" cy="124" rx="2.6" ry="7" fill="#1E2A1A"/><circle cx="174.5" cy="120" r="2" fill="#FFFFFF"/><circle cx="210.5" cy="120" r="2" fill="#FFFFFF"/></g>
+  <ellipse cx="181" cy="148" rx="11" ry="9" fill="#E6EAF0"/><ellipse cx="199" cy="148" rx="11" ry="9" fill="#E6EAF0"/>
+  <path d="M170 147 L138 141 M170 152 L136 154 M210 147 L242 141 M210 152 L244 154" stroke="#5C6470" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+  <path d="M185 139 L195 139 L190 145 Z" fill="#E58A9E"/>
+  <g class="mc"><path d="M190 145 L190 149 M183 151 Q187 155 190 149 Q193 155 197 151" stroke="#3A3F48" stroke-width="2" fill="none" stroke-linecap="round"/></g>
+  <g class="mo"><ellipse cx="190" cy="156" rx="7" ry="8" fill="#6B2B2B"/><ellipse cx="190" cy="160" rx="4.5" ry="3" fill="#F08FA8"/></g>
+</g>
+<g transform="rotate(42 233 208)"><g class="arm"><rect x="223" y="146" width="20" height="62" rx="10" fill="#A9B4C2" stroke="#8693A3" stroke-width="1.5"/><circle cx="233" cy="146" r="14" fill="#E6EAF0" stroke="#8693A3" stroke-width="1.5"/><ellipse cx="227" cy="140" rx="2.6" ry="3.2" fill="#F4B6C2"/><ellipse cx="233" cy="137" rx="2.6" ry="3.2" fill="#F4B6C2"/><ellipse cx="239" cy="140" rx="2.6" ry="3.2" fill="#F4B6C2"/><ellipse cx="233" cy="149" rx="5" ry="4" fill="#F4B6C2"/></g></g>`;
+
+const svgFor = (inner) => `<svg viewBox="${VIEWBOX}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
 
 /* ======================= Tiere ======================= */
 /* strong: zählen überall, auch mitten im Satz
@@ -148,13 +207,15 @@ const ANIMALS = [
     name: 'Hund', emoji: '🐶', say: 'Wau wau!', pitch: 0.7, rate: 1.0,
     strong: ['hund', 'hunde', 'hundi', 'hündchen', 'wau', 'wauwau', 'wuff'],
     weak: ['und', 'rund', 'hunt', 'bau', 'wow'],
-    fuzzy: ['hund', 'hundi', 'wuff']
+    fuzzy: ['hund', 'hundi', 'wuff'],
+    svg: DOG_SVG, sound: 'sounds/hund.wav'
   },
   {
     name: 'Katze', emoji: '🐱', say: 'Miau!', pitch: 1.5, rate: 0.8,
     strong: ['katze', 'katzen', 'katzi', 'kätzchen', 'mieze', 'miezi', 'miau'],
     weak: ['tatze', 'atze', 'kaze', 'katz', 'mau', 'miu', 'miao'],
-    fuzzy: ['katze', 'mieze', 'miau']
+    fuzzy: ['katze', 'mieze', 'miau'],
+    svg: CAT_SVG, sound: 'sounds/katze.wav'
   }
 ];
 
@@ -236,7 +297,7 @@ async function walk(from, to, ms) {
 async function nextAnimal() {
   state.current = ANIMALS[state.index % ANIMALS.length];
   state.index++;
-  bodyEl.textContent = state.current.emoji;
+  bodyEl.innerHTML = svgFor(state.current.svg);
   state.phase = 'entering';
   hideBubble();
   listener.resume();
@@ -279,18 +340,12 @@ function wrongAnimal(how) {
   oneShot('no', 800);
 }
 
-// Kind winkt: Tier winkt zurück (bleibt aber stehen)
-let pawTimer = 0;
+// Kind winkt: Tier hebt die Pfote und winkt zurück (bleibt aber stehen)
 function waveBack() {
   if (state.phase !== 'waiting') return;
   state.lastActivity = Date.now();
   dbgLast = 'Winken'; renderDebug();
   oneShot('waveback', 2000);
-  pawEl.classList.remove('wave');
-  void pawEl.offsetWidth;
-  pawEl.classList.add('wave');
-  clearTimeout(pawTimer);
-  pawTimer = setTimeout(() => pawEl.classList.remove('wave'), 2000);
 }
 
 // Aufforderung, wenn 8 Sekunden nichts passiert
@@ -341,8 +396,42 @@ function beep(animal) {
   else { tone(600, 1000, 0, 0.25, 'sine'); tone(1000, 550, 0.25, 0.4, 'sine'); }
 }
 
-// Vorläufig: Sprachausgabe sagt "Wau wau!" bzw. "Miau!" (echte Tiergeräusche kommen später)
+// Tiergeräusche: Dateien gleich beim Öffnen laden, nach dem Start-Tippen entschlüsseln
+const soundRaw = {}, soundBuf = {};
+for (const a of ANIMALS) {
+  soundRaw[a.name] = fetch(a.sound)
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .catch(() => null);
+}
+async function decodeSounds() {
+  for (const a of ANIMALS) {
+    try {
+      const data = await soundRaw[a.name];
+      if (data && audioCtx) soundBuf[a.name] = await audioCtx.decodeAudioData(data.slice(0));
+    } catch (e) { /* dann Ersatz über Sprachausgabe */ }
+  }
+}
+
 function playSound(animal) {
+  const buf = soundBuf[animal.name];
+  if (!buf || !audioCtx) return speakSound(animal);
+  return new Promise((resolve) => {
+    let finished = false;
+    const done = () => { if (!finished) { finished = true; resolve(); } };
+    try {
+      audioCtx.resume();
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.onended = done;
+      src.start();
+      setTimeout(done, buf.duration * 1000 + 500); // Sicherheitsnetz
+    } catch (e) { speakSound(animal).then(done); }
+  });
+}
+
+// Ersatz, falls die Datei fehlt: Sprachausgabe sagt "Wau wau!" bzw. "Miau!"
+function speakSound(animal) {
   return new Promise((resolve) => {
     let finished = false;
     const done = () => { if (!finished) { finished = true; resolve(); } };
@@ -677,13 +766,13 @@ function camLoop(recognizer, video) {
 }
 
 // nur für Tests im Browser
-window.zsDebug = { waveBack, wave };
+window.zsDebug = { waveBack, wave, sounds: () => Object.keys(soundBuf) };
 
 /* ======================= Start ======================= */
 $('startBtn').addEventListener('click', () => {
   // Ton und Sprachausgabe müssen durch eine Berührung freigeschaltet werden
   const AC = window.AudioContext || window.webkitAudioContext;
-  if (AC) { audioCtx = new AC(); audioCtx.resume(); }
+  if (AC) { audioCtx = new AC(); audioCtx.resume(); decodeSounds(); }
   if ('speechSynthesis' in window) {
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
   }
