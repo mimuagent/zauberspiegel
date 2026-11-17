@@ -50,6 +50,7 @@
   @keyframes raypulse { from { scale: .92; } to { scale: 1.08; } }
   #stage.sunny { background: linear-gradient(#a6dcff 0%, #e6f6ff 62%, #93d97e 62%, #6bb85c 100%); }
   #stage { transition: background .8s ease; }
+  #stage::before { content: ""; position: absolute; inset: 0; background: url("hintergrund.svg") center bottom / cover no-repeat; pointer-events: none; }
 
   .cloud {
     position: absolute; height: 8vmin; width: 26vmin; border-radius: 8vmin; background: #fff; opacity: .9;
